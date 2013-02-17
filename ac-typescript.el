@@ -24,14 +24,13 @@
 (require 'ac-typescript-server)
 (require 'ac-typescript-client)
 
-(defvar ac-typescript/debug-mode nil)
+(defcustom ac-typescript/auto-register t
+  "*Determines whether to save the buffer when retrieving completions."
+  :group 'auto-complete
+  :type '(choice (const :tag "Off" nil)
+                 (const :tag "On" t)))
 
-(defun ac-typescript/document (item)
-  (if (stringp item)
-      (let (s)
-        (setq s (get-text-property 0 'ac-typescript/help item))
-        s))
-  )
+(defvar ac-typescript/debug-mode nil)
 
 (defface ac-typescript/candidate-face
   '((t (:background "lightgray" :foreground "navy")))
@@ -42,6 +41,22 @@
   '((t (:background "navy" :foreground "white")))
   "Face for the ts selected candidate."
   :group 'auto-complete)
+
+(defun ac-typescript/init-server ()
+  "Running server for prepareation to use completion."
+  (ac-typescript-server/run-process))
+
+(defun ac-typescript/stop-server ()
+  "Stop server if it is running."
+  (interactive)
+  (ac-typescript-server/delete-process))
+
+(defun ac-typescript/document (item)
+  (if (stringp item)
+      (let (s)
+        (setq s (get-text-property 0 'ac-typescript/help item))
+        s))
+  )
 
 (defsubst ac-in-string/comment ()
   "Return non-nil if point is in a literal (a comment or string)."
@@ -82,7 +97,7 @@
         (when (or (eq ?\. c))
           (point)))))
 
-(ac-define-source ts
+(ac-define-source typescript
   '((candidates . ac-typescript/candidate)
     (candidate-face . ac-typescript/candidate-face)
     (selection-face . ac-typescript/selection-face)
@@ -91,5 +106,12 @@
     (document . ac-typescript/document)
     (cache)
     (symbol . "t")))
+
+(defun ac-typescript/ac-enable ()
+  "Enable auto-complete and setting to use ac-typescript."
+  (interactive)
+  (setq ac-sources (append ('ac-source-typescrip9t) ac-sources))
+  (auto-complete-mode 1)
+  )
 
 (provide 'ac-typescript)

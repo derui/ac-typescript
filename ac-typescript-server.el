@@ -27,7 +27,7 @@
   :type 'file)
 
 (defcustom ac-typescript-server/isense-location
-  "bin/isense.js"
+  "./bin/isense.js"
   "*Location of typescript completion service"
   :group 'auto-complete
   :type 'file)
@@ -37,12 +37,6 @@
   "*Port of server for typescript completion service"
   :group 'auto-complete
   :type 'int)
-
-(defcustom ac-typescript-server/auto-register t
-  "*Determines whether to save the buffer when retrieving completions."
-  :group 'auto-complete
-  :type '(choice (const :tag "Off" nil)
-                 (const :tag "On" t)))
 
 (defvar ac-typescript-server/dir (file-name-directory load-file-name)
   "The root dir of the ac-typescript completion service distribution.")
@@ -67,8 +61,14 @@
       )))
 
 (defun ac-typescript-server/delete-process ()
-  ;; delete process to ac-typescript-server
+  "delete process to ac-typescript-server"
   (and ac-typescript-server/proc
        (delete-process ac-typescript-server/proc)))
+
+(defun ac-typescript-server/server-running-p ()
+  "Return server running or not."
+  (and ac-typescript-server/proc
+       (eq 'run (process-status ac-typescript-server/proc)))
+  )
 
 (provide 'sc-typescript-server)
