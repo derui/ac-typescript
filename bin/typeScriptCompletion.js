@@ -73,8 +73,13 @@ var TypeScriptLS = (function () {
     };
     TypeScriptLS.prototype.addFile = function (name, isResident) {
         if (typeof isResident === "undefined") { isResident = false; }
-        var code = fs.readFileSync(name, 'utf8');
-        this.addScript(name, code, isResident);
+        var _this = this;
+        fs.readFile(name, 'utf8', function (err, data) {
+            if(err) {
+                throw err;
+            }
+            _this.addScript(name, data, isResident);
+        });
     };
     TypeScriptLS.prototype.addScript = function (name, content, isResident) {
         if (typeof isResident === "undefined") { isResident = false; }
@@ -161,8 +166,14 @@ var TypeScriptLS = (function () {
         return script;
     };
     TypeScriptLS.prototype.parseFile = function (fileName) {
-        var sourceText = new TypeScript.StringSourceText(fs.readFileSync(fileName, 'utf8'));
-        return this.parseSourceText(fileName, sourceText);
+        var _this = this;
+        fs.readFile(fileName, 'utf8', function (err, data) {
+            if(err) {
+                throw err;
+            }
+            var sourceText = new TypeScript.StringSourceText(data);
+            _this.parseSourceText(fileName, sourceText);
+        });
     };
     TypeScriptLS.prototype.lineColToPosition = function (fileName, line, col) {
         var script = this.ls.languageService.getScriptAST(fileName);

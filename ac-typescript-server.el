@@ -38,32 +38,37 @@
   :group 'auto-complete
   :type 'int)
 
-(defvar ac-typescript-server/dir (file-name-directory load-file-name)
+(defvar ac-typescript-server/dir
+  (concat (file-name-as-directory (file-name-directory load-file-name))
+          "bin")
   "The root dir of the ac-typescript completion service distribution.")
 
 (defconst ac-typescript-server/error-buffer-name "*ac-typescript-server error*")
 
 ;; connect to isense-server.
 (defvar ac-typescript-server/proc nil)
-(make-variable-buffer-local 'ac-typescript-server/proc)
 (defvar ac-typescript-server/result nil)
-(make-variable-buffer-local 'ac-typescript-server/result)
 
 (defun ac-typescript-server/run-process ()
   (unless (and ac-typescript-server/proc
-               (member (process-status ac-typescript-server/proc) '(run stop)))
+               (member (process-status ac-typescript-server/proc) '(run stop exit)))
     (let ((isense (expand-file-name ac-typescript-server/isense-location))
           (port (concat "--port " ac-typescript-server/server-port)))
-      (setq ac-typescript-server/proc (start-process "typescript-isense"
-                                              "*typescript-isense*"
-                                              ac-typescript-server/node-executable
-                                              isense port))
+      (let ((current-dir default-directory))
+        (cd ac-typescript-server/dir)
+        (setq ac-typescript-server/proc (start-process "typescript-isense"
+                                                       "*typescript-isense*"
+                                                       ac-typescript-server/node-executable
+                                                       isense port))
+        (cd current-dir))
       )))
 
 (defun ac-typescript-server/delete-process ()
   "delete process to ac-typescript-server"
-  (and ac-typescript-server/proc
-       (delete-process ac-typescript-server/proc)))
+  (let ((process ac-typescript-server/proc))
+    (setq ac-typescript-server/proc nil)
+    (and process (delete-process process)))
+  )
 
 (defun ac-typescript-server/server-running-p ()
   "Return server running or not."
@@ -71,4 +76,4 @@
        (eq 'run (process-status ac-typescript-server/proc)))
   )
 
-(provide 'sc-typescript-server)
+(provide 'ac-typescript-server)

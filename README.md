@@ -7,7 +7,7 @@ This contain emacs lisp and language service server for completion.
 
 Requirement
 ===========
-You have to install node.js before using this, but not have to install typescript on npm,
+You have to install node.js and curl before using this, but not have to install typescript on npm,
 because ac-typescript is already included them.
 But, we recommend to install TypeScript.el that is major mode for Typescript editing before install this.
 

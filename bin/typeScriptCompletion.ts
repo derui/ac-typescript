@@ -81,8 +81,10 @@ export class TypeScriptLS implements Services.ILanguageServiceShimHost {
     }
 
     public addFile(name: string, isResident = false) {
-        var code: string = fs.readFileSync(name, 'utf8');
-        this.addScript(name, code, isResident);
+        fs.readFile(name, 'utf8', (err, data:string) => {
+            if (err) throw err;
+            this.addScript(name, data, isResident);
+        });
     }
 
     public addScript(name: string, content: string, isResident = false) {
@@ -195,8 +197,11 @@ export class TypeScriptLS implements Services.ILanguageServiceShimHost {
     // Parse a file on disk given its filename
     //
     public parseFile(fileName: string) {
-        var sourceText = new TypeScript.StringSourceText(fs.readFileSync(fileName, 'utf8'))
-        return this.parseSourceText(fileName, sourceText);
+        fs.readFile(fileName, 'utf8', (err, data:string) => {
+            if (err) throw err;
+            var sourceText = new TypeScript.StringSourceText(data);
+            this.parseSourceText(fileName, sourceText);
+        });
     }
 
     //
