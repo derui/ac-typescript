@@ -149,6 +149,7 @@
 (defun ac-typescript/typescriptp (buffer)
   "Return whether given buffer is typescript or not"
   (and buffer
+       (buffer-file-name buffer)
        (if (string-match "^.+\\.ts$" (buffer-file-name buffer)) t nil))
   )
 
