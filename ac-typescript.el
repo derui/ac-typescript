@@ -103,6 +103,7 @@
               (ac-typescript/inner-candidate-callback result)))))))
 
 (defun ac-typescript/prefix ()
+  "Define prefix is given timing when fire ac-complete"
   (or (ac-prefix-symbol)
       (let ((c (char-before)))
         (when (or (eq ?\. c))

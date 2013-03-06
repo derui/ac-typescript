@@ -24,7 +24,7 @@
   (require 'cl))
 (require 'json)
 (require 'url)
-(require 'deferred)
+(require 'websocket)
 
 (defcustom ac-typescript-client/client-executable
   (executable-find "curl")
@@ -36,8 +36,11 @@
   'ac-typescript-server/server-port
   "Variable symbol to be used as port for isense server")
 
+(defvar ac-typescript-client/ws nil
+  "Websocket structure for typescript completion server")
+
 (defvar ac-typescript-client/server-address
-  "http://localhost"
+  "ws://localhost"
   "Server address")
 
 (defvar ac-typescript-client/log-buffer "*ac-typescript-client Logs"
@@ -80,6 +83,44 @@
           ":"
           (symbol-value ac-typescript-client/server-port-variable)
           query "\""))
+
+(defun ac-typescript-client/ws-message (websocket frame)
+  (push (websocket-frame-payload frame) wstest-msgs)
+  (message "ws frame: %S" (websocket-frame-payload frame))
+  (error "Test error (expected)"))
+
+(defun ac-typescript-client/ws-opened ()
+  "Execute when websocket connection is opened."
+  (ac-typescript-client/logger "websocket opened"))
+
+(defun ac-typescript-client/ws-closed ()
+  "Execute when websocket connection is closed."
+  (setq ac-typescript-client/ws nil))
+
+(defun ac-typescript-client/ws-open-p ()
+  "Return whether websocket connection open or not."
+  (and ac-typescript-client/ws
+       (websocket-openp ac-typescript-client/ws))
+  )
+
+(defun ac-typescript-client/make-address ()
+  "Make address for websocket connection."
+  (concat ac-typescript-client/server-address ":"
+          (symbol-value ac-typescript-client/server-port-variable))
+  )
+
+(defun ac-typescript-client/open-websocket ()
+  "Open websocket protocol to completion server.
+If connecting it failed, websocket structure set nil
+"
+  (let ((ws (websocket-open
+             (ac-typescript-client/make-address)
+             :on-open 'ac-typescipt-client/ws-opened
+             :on-message 'ac-typescript-client/ws-message
+             :on-close 'ac-typescript-client/ws-closed)))
+    (setq ac-typescript-client/ws ws)
+    )
+  )
 
 (defun ac-typescript-client/run-process (query &rest callback)
   (ac-typescript-client/logger
