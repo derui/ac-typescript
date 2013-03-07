@@ -54,19 +54,19 @@
   "Second to connection timeout from server")
 
 (defvar ac-typescript-client/add-file-message-format
-  "add\n%s"
+  "{method:'add', file: '%s'}"
   "Format when send request to server to add file for using completion")
 
 (defvar ac-typescript-client/update-buffer-message-format
-  "update\n%s\n%d\n%d\n%s"
+  "{method: 'update', file: '%s', line:%d, col: %d, text:'%s'}"
   "Format when send request to server to update region of file for using completion")
 
 (defvar ac-typescript-client/update-file-message-format
-  "update-file\n%s"
+  "{method: 'update-file', file: '%s'}"
   "Format when send request to server to update file for using completion")
 
 (defvar ac-typescript-client/completion-message-format
-  "completion\n%s\n%d\n%d\n%d"
+  "{method: 'completion', file:'%s',line:%d,column:%d}"
   "Format when send request to server to get completion list")
 
 (defun ac-typescript-client/logger (log)
@@ -78,21 +78,22 @@
       (newline))
     ))
 
-(defun ac-typescript-client/make-address (query)
+(defun ac-typescript-client/make-address ()
   (concat ac-typescript-client/server-address ":"
-          (symbol-value ac-typescript-client/server-port-variable)))
+          (symbol-value ac-typescript-client/server-port-variable)
+          "/socket.io/1/websocket/"))
 
 (defun ac-typescript-client/ws-message (websocket frame)
-  (push (websocket-frame-payload frame) wstest-msgs)
-  (message "ws frame: %S" (websocket-frame-payload frame))
-  (error "Test error (expected)"))
+  (message "ws frame: %S" (websocket-frame-payload frame)))
 
-(defun ac-typescript-client/ws-opened ()
+(defun ac-typescript-client/ws-opened (websocket)
   "Execute when websocket connection is opened."
   (ac-typescript-client/logger "websocket opened"))
 
-(defun ac-typescript-client/ws-closed ()
+(defun ac-typescript-client/ws-closed (websocket)
   "Execute when websocket connection is closed."
+  (message "connection closed")
+  (ac-typescript-client/logger websocket)
   (setq ac-typescript-client/ws nil))
 
 (defun ac-typescript-client/ws-open-p ()
@@ -114,18 +115,19 @@ If connecting it failed, websocket structure set nil
   (when (not (ac-typescript-client/ws-open-p))
     (let ((ws (websocket-open
                (ac-typescript-client/make-address)
-               :on-open 'ac-typescipt-client/ws-opened
-               :on-message 'ac-typescript-client/ws-message
-               :on-close 'ac-typescript-client/ws-closed)))
+               :on-open (lambda (websocket) (ac-typescript-client/ws-opened websocket))
+               :on-message (lambda (websocket frame) (ac-typescript-client/ws-message websocket frame))
+               :on-close (lambda (websocket) (ac-typescript-client/ws-closed websocket)))))
       (setq ac-typescript-client/ws ws)
       )
     ))
 
-(defun ac-typescript-clinet/send-message (message)
+(defun ac-typescript-client/send-message (message)
   "Send message to websocket opened."
   (unless (ac-typescript-client/ws-open-p)
     (ac-typescript-client/open-websocket))
-  (websocket-send-text ac-typescript-client/ws message)
+  (websocket-send-text ac-typescript-client/ws
+                       (json-encode message))
   )
 
 (defun ac-typescript-clinet/close-websocket ()
@@ -178,13 +180,13 @@ If connecting it failed, websocket structure set nil
   (ac-typescript-client/logger (format "Update file to completion server : file : %s %d %d %s"
                                        buffer prev next text))
   (let* ((original (expand-file-name (buffer-file-name buffer)))
-         (query (ac-typescript-client/make-query
-                 (format ac-typescript-client/update-buffer-message-format original
-                         prev next (json-encode text)))))
+         (query
+                 )))
     (when (file-exists-p original)
-      (ac-typescript-client/run-process query)))
+      (ac-typescript-client/send-message (format ac-typescript-client/update-buffer-message-format original
+                         prev next (json-encode text)))
+      )
   )
-
 
 (defun ac-typescript-client/add-file (filename)
   "Send request that add given file to completion server"
@@ -206,7 +208,7 @@ If connecting it failed, websocket structure set nil
       (ac-typescript-client/logger (format "Get completion list : query : %s" query))
       (ac-typescript-client/send-message
        (format ac-typescript-client/completion-message-format
-               (url-hexify-string (expand-file-name filename)) line column (if (not member)
+               (expand-file-name filename) line column (if (not member)
                                                                                0 1)))
         )
        ))

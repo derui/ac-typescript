@@ -78,12 +78,11 @@ var opts = new Options().parse([
     new OptionItem("debug", "d", false, false)
 ]);
 var port = parseInt(opts['port']) || 8124;
-var services = require("./typeScriptCompletion")
+var services = require('./typeScriptCompletion')
 var typescriptLS = new services.TypeScriptLS();
 typescriptLS.addDefaultLibrary();
+var ws = require('socket.io');
 var http = require('http');
-var url = require('url');
-var querystring = require('querystring');
 var lsCache = null;
 function addFile(query) {
     if(query['file']) {
@@ -136,35 +135,21 @@ var methodHandler = {
     'update-file': updateFile,
     'update': updateScript
 };
-me;
-http.createServer(function (req, res) {
-    var postdata = "";
-    var query = querystring.parse(url.parse(req.url).query);
-    res.writeHead(200, {
-        'Content-Type': 'application/json'
-    });
-    try  {
-        var response = '';
-        if(req.method === 'POST') {
-            req.addListener('data', function (chunk) {
-                postdata += chunk;
-            });
-            req.addListener('end', function (chunk) {
-                methodHandler[query['method']](query, postdata);
-            });
-        } else if(req.method === 'GET') {
-            if(query['method']) {
-                if(methodHandler[query['method']]) {
-                    response = methodHandler[query['method']](query);
-                }
-            }
-        }
-        res.end(JSON.stringify(response));
-    } catch (e) {
-        console.log(e.toString());
-        res.writeHead(403, {
-            'Content-Type': 'application/json'
-        });
-        res.end('');
-    }
+var server = http.createServer(function () {
 }).listen(port, '127.0.0.1');
+var io = ws.listen(server);
+io.set("destroy upgrade", false);
+io.on('connection', function (socket) {
+    socket.on('message', function (data) {
+        console.log(data);
+        var data = JSON.parse(data);
+        if(data['method'] && methodHandler[data['method']]) {
+            response = methodHandler[data['method']](data);
+        }
+        if(data['method'] && data['method'] === 'completion') {
+            server.clients.forEach(function (client) {
+                client.send(JSON.stringify(response));
+            });
+        }
+    });
+});

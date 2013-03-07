@@ -88,9 +88,8 @@ var typescriptLS = new services.TypeScriptLS();
 
 typescriptLS.addDefaultLibrary();
 
+var ws = require('socket.io');
 var http = require('http');
-var url = require('url');
-var querystring = require('querystring');
 
 var lsCache = null;
 
@@ -158,36 +157,25 @@ var methodHandler = {
     'update-file' : updateFile,
     'update' : updateScript
 };
-me
 
-http.createServer((req, res) => {
-    var postdata = "";
-    var query = querystring.parse(url.parse(req.url).query);
+var server = http.createServer(function () {}).listen(port, '127.0.0.1');
 
-    res.writeHead(200,  {'Content-Type': 'application/json'});
+var io = ws.listen(server);
+io.set("destroy upgrade", false);
 
-    try {
-        var response = '';
-        if (req.method === 'POST') {
-            req.addListener('data', (chunk) => {
-                postdata += chunk;
-            });
+ io.on('connection', (socket) => {
+    socket.on('message', (data) => {
+        console.log(data);
+        var data = JSON.parse(data);
 
-            req.addListener('end', (chunk) => {
-                methodHandler[query['method']](query, postdata);
-            });
-        } else if (req.method === 'GET') {
-            if (query['method']) {
-                if (methodHandler[query['method']]) {
-                    response = methodHandler[query['method']](query);
-                }
-            }
+        if (data['method'] && methodHandler[data['method']]) {
+            response = methodHandler[data['method']](data);
         }
-        res.end(JSON.stringify(response));
-    } catch (e) {
-        console.log(e.toString());
-        res.writeHead(403, {'Content-Type': 'application/json'});
-        res.end('');
-    }
 
-}).listen(port, '127.0.0.1');
+        if (data['method'] && data['method'] === 'completion') {
+            server.clients.forEach((client) => {
+                client.send(JSON.stringify(response));
+            });
+        }
+    });
+});
