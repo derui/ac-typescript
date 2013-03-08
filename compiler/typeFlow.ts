@@ -1088,7 +1088,7 @@ module TypeScript {
                 if (this.thisClassNode && (hasFlag(this.thisFnc.fncFlags, FncFlags.IsPropertyBound) || (this.inSuperCall && hasFlag((<ClassDeclaration>this.thisClassNode).varFlags, VarFlags.ClassSuperMustBeFirstCallInConstructor)))) {
                     illegalThisRef = true;
                 }
-                if (this.thisFnc.isMethod() || this.thisFnc.isConstructor || this.thisFnc.isTargetTypedAsMethod) {
+                if (this.thisFnc.isMethod() || this.thisFnc.isConstructor) {
                     if (this.thisType && !(this.thisFnc.fncFlags & FncFlags.Static)) {
                         ast.type = this.thisType;
                     }
@@ -1158,9 +1158,15 @@ module TypeScript {
             if (symbol.isVariable()) {
                 if (symbol.isInferenceSymbol()) {
                     var infSym = <InferenceSymbol>symbol;
-                    if (infSym.declAST &&
-                        !this.checker.typeStatusIsFinished(infSym.typeCheckStatus)) {
-                        this.inScopeTypeCheckDecl(infSym.declAST);
+                    if (infSym.declAST && !this.checker.typeStatusIsFinished(infSym.typeCheckStatus)) {
+                        if (infSym.typeCheckStatus == TypeCheckStatus.Started) {
+                            // Since we have started the declAST type check, but not finished, it must be a recursive variable reference.
+                            infSym.declAST.type = this.anyType;
+                            infSym.setType(this.anyType);
+                        }
+                        else {
+                            this.inScopeTypeCheckDecl(infSym.declAST);
+                        }
                     }
                     if (!this.checker.styleSettings.innerScopeDeclEscape) {
                         if (infSym.declAST && (infSym.declAST.nodeType == NodeType.VarDecl)) {
@@ -1366,11 +1372,6 @@ module TypeScript {
                 this.checker.errorReporter.styleError(ast, "use of " + nodeTypeTable[binex.nodeType]);
             }
 
-            if (leftType == null || rightType == null) {
-                this.checker.errorReporter.simpleError(binex, "Could not typecheck arithmetic operation.  Possible recursive typecheck error?");
-                binex.type = this.anyType;
-                return binex;
-            }
             var nodeType = binex.nodeType;
 
             if (this.checker.isNullOrUndefinedType(leftType)) {
@@ -1784,7 +1785,9 @@ module TypeScript {
         }
 
         // REVIEW: isClass param may now be redundant
-        public addConstructorLocalArgs(container: Symbol, args: ASTList, table: IHashTable, isClass: bool): void {
+        public addConstructorLocalArgs(constructorDecl: FuncDecl, table: IHashTable, isClass: bool): void {
+            var container = constructorDecl.type.symbol;
+            var args = constructorDecl.arguments;
             if (args) {
                 var len = args.members.length;
                 for (var i = 0; i < len; i++) {
@@ -1799,6 +1802,7 @@ module TypeScript {
                             var varSym = new ParameterSymbol(local.id.text, local.minChar,
                                                                    this.checker.locationInfo.unitIndex,
                                                                    localVar);
+                            varSym.funcDecl = constructorDecl;
                             varSym.declAST = local;
                             localVar.symbol = varSym;
                             localVar.typeLink.type = local.type;
@@ -2242,7 +2246,10 @@ module TypeScript {
                     this.checker.errorReporter.simpleError(funcDecl, "Malformed function body (is this a class named the same as an existing interface?)");
                     return funcDecl;
                 }
-
+                if (funcDecl.classDecl.type.construct == null) {
+                    this.checker.errorReporter.simpleError(funcDecl, "Malformed constructor (is this a class named the same as an existing class?)");
+                    return funcDecl;
+                }
                 this.scope = fnType.instanceType.constructorScope;
                 var ssb = <SymbolScopeBuilder>this.scope;
                 funcTable = ssb.valueMembers.allMembers;
@@ -2393,19 +2400,6 @@ module TypeScript {
                             targetParams = candidateParams;
                             targetReturnType = candidateTypeContext.targetSig.returnType.type;
 
-                            // Set "this" if applicable
-                            if (candidateTypeContext.targetSig.declAST) {
-                                if (candidateTypeContext.targetSig.declAST.isConstructor) {
-                                    //candidateTypeContext.targetThis=candidateType.instanceType;
-                                    //this.thisType = candidateType.instanceType;
-                                    funcDecl.isTargetTypedAsMethod = true;
-                                }
-                                else if (candidateTypeContext.targetSig.declAST.isMethod()) {
-                                    //candidateTypeContext.targetThis=candidateTypeContext.targetSig.declAST.type.enclosingType;
-                                    //this.thisType = candidateTypeContext.targetSig.declAST.type.enclosingType;
-                                    funcDecl.isTargetTypedAsMethod = true;
-                                }
-                            }
                             fgSym.type = candidateTypeContext.contextualType;
                             acceptedContextualType = true;
                         }
@@ -2489,7 +2483,7 @@ module TypeScript {
                     this.addFormals(container, signature, funcTable);
                 }
                 else {
-                    this.addConstructorLocalArgs(funcDecl.type.symbol, funcDecl.arguments, funcTable, hasFlag(funcDecl.fncFlags, FncFlags.ClassMethod));
+                    this.addConstructorLocalArgs(funcDecl, funcTable, hasFlag(funcDecl.fncFlags, FncFlags.ClassMethod));
 
                     if (this.thisClassNode && this.thisClassNode.extendsList) {
                         var tmpScope = this.scope;
@@ -2881,7 +2875,7 @@ module TypeScript {
                 var ssb = <SymbolScopeBuilder>this.scope;
                 var funcTable = ssb.valueMembers.allMembers;
 
-                this.addConstructorLocalArgs(classDecl.constructorDecl.type.symbol, classDecl.constructorDecl.arguments, funcTable, true);
+                this.addConstructorLocalArgs(classDecl.constructorDecl, funcTable, true);
             }
 
             this.typeCheck(classDecl.members);
@@ -3595,23 +3589,27 @@ module TypeScript {
                 }
                 this.tryAddCandidates(signature, actuals, exactCandidates, conversionCandidates, comparisonInfo);
             }
+
+            // For error reporting, we want to use the span of just the function's name if it is a method or a field of some object, so go to the right child if the node is a dot.
+            // No need to recurse since dots are left associative
+            var apparentTarget = target.nodeType == NodeType.Dot ? (<BinaryExpression> target).operand2 : target;
             if (exactCandidates.length == 0) {
 
                 var applicableCandidates = this.checker.getApplicableSignatures(conversionCandidates, args, comparisonInfo);
                 if (applicableCandidates.length > 0) {
                     var candidateInfo = this.checker.findMostApplicableSignature(applicableCandidates, args);
                     if (candidateInfo.ambiguous) {
-                        this.checker.errorReporter.simpleError(target, "Ambiguous call expression - could not choose overload");
+                        this.checker.errorReporter.simpleError(apparentTarget, "Ambiguous call expression - could not choose overload");
                     }
                     candidate = candidateInfo.sig;
                 }
                 else {
                     var emsg = "Supplied parameters do not match any signature of call target";
                     if (comparisonInfo.message) {
-                        this.checker.errorReporter.simpleError(target, emsg + ":\n\t" + comparisonInfo.message);
+                        this.checker.errorReporter.simpleError(apparentTarget, emsg + ":\n\t" + comparisonInfo.message);
                     }
                     else {
-                        this.checker.errorReporter.simpleError(target, emsg);
+                        this.checker.errorReporter.simpleError(apparentTarget, emsg);
                     }
                 }
             }
@@ -3623,7 +3621,7 @@ module TypeScript {
                     }
                     var candidateInfo = this.checker.findMostApplicableSignature(applicableSigs, args);
                     if (candidateInfo.ambiguous) {
-                        this.checker.errorReporter.simpleError(target, "Ambiguous call expression - could not choose overload");
+                        this.checker.errorReporter.simpleError(apparentTarget, "Ambiguous call expression - could not choose overload");
                     }
                     candidate = candidateInfo.sig;
                 }

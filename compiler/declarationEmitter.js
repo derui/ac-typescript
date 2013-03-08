@@ -103,6 +103,9 @@ var TypeScript;
                 result += "export ";
             }
             if(TypeScript.hasFlag(declFlags, TypeScript.DeclFlags.LocalStatic) || TypeScript.hasFlag(declFlags, TypeScript.DeclFlags.Static)) {
+                if(TypeScript.hasFlag(declFlags, TypeScript.DeclFlags.Private)) {
+                    result += "private ";
+                }
                 result += "static " + accessorString;
             } else {
                 if(TypeScript.hasFlag(declFlags, TypeScript.DeclFlags.Private)) {
@@ -344,7 +347,11 @@ var TypeScript;
                 var id = funcDecl.getNameText();
                 if(!isInterfaceMember) {
                     this.emitDeclFlags(TypeScript.ToDeclFlags(funcDecl.fncFlags), "function");
-                    this.declFile.Write(id);
+                    if(id != "__missing" || !funcDecl.name || !funcDecl.name.isMissing()) {
+                        this.declFile.Write(id);
+                    } else if(funcDecl.isConstructMember()) {
+                        this.declFile.Write("new");
+                    }
                 } else {
                     this.emitIndent();
                     if(funcDecl.isConstructMember()) {

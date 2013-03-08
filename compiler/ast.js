@@ -704,11 +704,10 @@ var TypeScript;
     TypeScript.ConditionalExpression = ConditionalExpression;    
     var NumberLiteral = (function (_super) {
         __extends(NumberLiteral, _super);
-        function NumberLiteral(value, hasEmptyFraction) {
+        function NumberLiteral(value, text) {
                 _super.call(this, TypeScript.NodeType.NumberLit);
             this.value = value;
-            this.hasEmptyFraction = hasEmptyFraction;
-            this.isNegativeZero = false;
+            this.text = text;
         }
         NumberLiteral.prototype.typeCheck = function (typeFlow) {
             this.type = typeFlow.doubleType;
@@ -720,33 +719,21 @@ var TypeScript;
         NumberLiteral.prototype.emit = function (emitter, tokenId, startLine) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            if(this.isNegativeZero) {
-                emitter.writeToOutput("-");
-            }
-            emitter.writeToOutput(this.value.toString());
-            if(this.hasEmptyFraction) {
-                emitter.writeToOutput(".0");
-            }
+            emitter.writeToOutput(this.text);
             emitter.recordSourceMappingEnd(this);
             emitter.emitParensAndCommentsInPlace(this, false);
         };
         NumberLiteral.prototype.printLabel = function () {
-            if(Math.floor(this.value) != this.value) {
-                return this.value.toFixed(2).toString();
-            } else if(this.hasEmptyFraction) {
-                return this.value.toString() + ".0";
-            } else {
-                return this.value.toString();
-            }
+            return this.text;
         };
         return NumberLiteral;
     })(Expression);
     TypeScript.NumberLiteral = NumberLiteral;    
     var RegexLiteral = (function (_super) {
         __extends(RegexLiteral, _super);
-        function RegexLiteral(regex) {
+        function RegexLiteral(text) {
                 _super.call(this, TypeScript.NodeType.Regex);
-            this.regex = regex;
+            this.text = text;
         }
         RegexLiteral.prototype.typeCheck = function (typeFlow) {
             this.type = typeFlow.regexType;
@@ -755,7 +742,7 @@ var TypeScript;
         RegexLiteral.prototype.emit = function (emitter, tokenId, startLine) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            emitter.writeToOutput(this.regex.toString());
+            emitter.writeToOutput(this.text);
             emitter.recordSourceMappingEnd(this);
             emitter.emitParensAndCommentsInPlace(this, false);
         };
@@ -962,7 +949,6 @@ var TypeScript;
             this.boundToProperty = null;
             this.isOverload = false;
             this.innerStaticFuncs = [];
-            this.isTargetTypedAsMethod = false;
             this.isInlineCallLiteral = false;
             this.accessorSymbol = null;
             this.leftCurlyCount = 0;
@@ -970,6 +956,7 @@ var TypeScript;
             this.returnStatementsWithExpressions = [];
             this.scopeType = null;
             this.endingToken = null;
+            this.constructorSpan = null;
         }
         FuncDecl.prototype.isDeclaration = function () {
             return true;
@@ -1132,7 +1119,6 @@ var TypeScript;
             this.containsUnicodeCharInComment = false;
             this.externallyVisibleImportedSymbols = [];
             this.vars = vars;
-            this.scopes = scopes;
         }
         Script.prototype.setCachedEmitRequired = function (value) {
             this.cachedEmitRequired = value;
@@ -1182,9 +1168,7 @@ var TypeScript;
         };
         Script.prototype.emit = function (emitter, tokenId, startLine) {
             if(this.emitRequired(emitter.emitOptions)) {
-                emitter.emitParensAndCommentsInPlace(this.bod, true);
                 emitter.emitJavascriptList(this.bod, null, TypeScript.TokenID.Semicolon, true, false, false, true, this.requiresExtendsBlock);
-                emitter.emitParensAndCommentsInPlace(this.bod, false);
             }
         };
         Script.prototype.AddExternallyVisibleImportedSymbol = function (symbol, checker) {
@@ -1229,7 +1213,7 @@ var TypeScript;
     TypeScript.NamedDeclaration = NamedDeclaration;    
     var ModuleDeclaration = (function (_super) {
         __extends(ModuleDeclaration, _super);
-        function ModuleDeclaration(name, members, vars, scopes, endingToken) {
+        function ModuleDeclaration(name, members, vars, endingToken) {
                 _super.call(this, TypeScript.NodeType.ModuleDeclaration, name, members);
             this.endingToken = endingToken;
             this.modFlags = TypeScript.ModuleFlags.ShouldEmitModuleDecl;
@@ -1237,7 +1221,6 @@ var TypeScript;
             this.containsUnicodeChar = false;
             this.containsUnicodeCharInComment = false;
             this.vars = vars;
-            this.scopes = scopes;
             this.prettyName = this.name.actualText;
         }
         ModuleDeclaration.prototype.isExported = function () {
@@ -1248,6 +1231,9 @@ var TypeScript;
         };
         ModuleDeclaration.prototype.isEnum = function () {
             return TypeScript.hasFlag(this.modFlags, TypeScript.ModuleFlags.IsEnum);
+        };
+        ModuleDeclaration.prototype.isWholeFile = function () {
+            return TypeScript.hasFlag(this.modFlags, TypeScript.ModuleFlags.IsWholeFile);
         };
         ModuleDeclaration.prototype.recordNonInterface = function () {
             this.modFlags &= ~TypeScript.ModuleFlags.ShouldEmitModuleDecl;
@@ -2013,6 +1999,7 @@ var TypeScript;
         function CaseStatement() {
                 _super.call(this, TypeScript.NodeType.Case);
             this.expr = null;
+            this.colonSpan = new ASTSpan();
         }
         CaseStatement.prototype.emit = function (emitter, tokenId, startLine) {
             emitter.emitParensAndCommentsInPlace(this, true);
@@ -2023,7 +2010,9 @@ var TypeScript;
             } else {
                 emitter.writeToOutput("default");
             }
+            emitter.recordSourceMappingStart(this.colonSpan);
             emitter.writeToOutput(":");
+            emitter.recordSourceMappingEnd(this.colonSpan);
             if(this.body.members.length == 1 && this.body.members[0].nodeType == TypeScript.NodeType.Block) {
                 emitter.emitJavascriptStatements(this.body, false);
             } else {
@@ -2340,7 +2329,7 @@ var TypeScript;
         };
         Comment.prototype.isDocComment = function () {
             if(this.isBlockComment) {
-                return this.content.charAt(2) == "*";
+                return this.content.charAt(2) == "*" && this.content.charAt(3) != "/";
             }
             return false;
         };
@@ -2519,15 +2508,15 @@ var TypeScript;
             }
             return "";
         };
-        Comment.getDocCommentTextOfSignatures = function getDocCommentTextOfSignatures(signatures) {
-            var comments = [];
-            for(var i = 0; i < signatures.length; i++) {
-                var signatureDocComment = TypeScript.Comment.getDocCommentText(signatures[i].declAST.getDocComments());
-                if(signatureDocComment != "") {
-                    comments.push(signatureDocComment);
+        Comment.getDocCommentFirstOverloadSignature = function getDocCommentFirstOverloadSignature(signatureGroup) {
+            for(var i = 0; i < signatureGroup.signatures.length; i++) {
+                var signature = signatureGroup.signatures[i];
+                if(signature == signatureGroup.definitionSignature) {
+                    continue;
                 }
+                return TypeScript.Comment.getDocCommentText(signature.declAST.getDocComments());
             }
-            return comments.join("\n");
+            return "";
         };
         return Comment;
     })(AST);
@@ -2540,8 +2529,9 @@ var TypeScript;
         DebuggerStatement.prototype.emit = function (emitter, tokenId, startLine) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            emitter.writeLineToOutput("debugger;");
+            emitter.writeToOutput("debugger");
             emitter.recordSourceMappingEnd(this);
+            emitter.writeLineToOutput(";");
             emitter.emitParensAndCommentsInPlace(this, false);
         };
         return DebuggerStatement;

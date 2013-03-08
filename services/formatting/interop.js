@@ -331,8 +331,10 @@ var Formatting;
             var ast = path.ast();
             var result = new AuthorParseNodeDetails();
             if(path.isListOfObjectLit()) {
-                Formatting.Debug.Assert(path.parent().minChar == path.ast().minChar, "Assumption about AST minChar position is not verified");
-                Formatting.Debug.Assert(path.parent().limChar == path.ast().limChar, "Assumption about AST limChar position is not verified");
+                if(!path.parent().isParenthesized) {
+                    Formatting.Debug.Assert(path.parent().minChar == path.ast().minChar, "Assumption about AST minChar position is not verified");
+                    Formatting.Debug.Assert(path.parent().limChar == path.ast().limChar, "Assumption about AST limChar position is not verified");
+                }
                 result.StartOffset = ast.minChar + 1;
                 result.EndOffset = ast.limChar - 1;
             } else {
@@ -596,19 +598,19 @@ var Formatting;
                             case AuthorParseNodeProperty.apnpFunctionKeywordMin:
                                 return funcDecl.minChar;
                             case AuthorParseNodeProperty.apnpLCurlyMin:
-                                if(bod !== null) {
+                                if(bod !== null && bod.minChar > 0) {
                                     return bod.minChar;
                                 } else {
                                     return 0;
                                 }
                             case AuthorParseNodeProperty.apnpRCurlyMin:
-                                if(bod !== null) {
+                                if(bod !== null && bod.limChar > 0) {
                                     return bod.limChar - 1;
                                 } else {
                                     return 0;
                                 }
                             case AuthorParseNodeProperty.apnpRParenMin:
-                                if(funcDecl.arguments != null) {
+                                if(funcDecl.arguments != null && funcDecl.arguments.limChar > 0) {
                                     return funcDecl.arguments.limChar - 1;
                                 }
                         }
@@ -1097,8 +1099,8 @@ var Formatting;
     Formatting.AuthorParseNodeDetails = AuthorParseNodeDetails;    
     (function (AuthorParseNodeFlags) {
         AuthorParseNodeFlags._map = [];
-        AuthorParseNodeFlags.apnfNone = 0;
-        AuthorParseNodeFlags.apnfSyntheticNode = 256;
+        AuthorParseNodeFlags.apnfNone = 0x0000;
+        AuthorParseNodeFlags.apnfSyntheticNode = 0x0100;
     })(Formatting.AuthorParseNodeFlags || (Formatting.AuthorParseNodeFlags = {}));
     var AuthorParseNodeFlags = Formatting.AuthorParseNodeFlags;
     (function (AuthorParseNodeKind) {
@@ -1989,29 +1991,29 @@ var Formatting;
         function EditorUtilities() { }
         EditorUtilities.IsWhitespace = function IsWhitespace(charCode) {
             switch(charCode) {
-                case 9:
-                case 11:
-                case 12:
-                case 65279:
-                case 32:
-                case 160:
-                case 5760:
-                case 8192:
-                case 8193:
-                case 8194:
-                case 8195:
-                case 8196:
-                case 8197:
-                case 8198:
-                case 8199:
-                case 8200:
-                case 8201:
-                case 8202:
-                case 8239:
-                case 8203:
-                case 12288:
-                case 6158:
-                case 8287:
+                case 0x0009:
+                case 0x000b:
+                case 0x000c:
+                case 0xfeff:
+                case 0x0020:
+                case 0x00a0:
+                case 0x1680:
+                case 0x2000:
+                case 0x2001:
+                case 0x2002:
+                case 0x2003:
+                case 0x2004:
+                case 0x2005:
+                case 0x2006:
+                case 0x2007:
+                case 0x2008:
+                case 0x2009:
+                case 0x200a:
+                case 0x202f:
+                case 0x200b:
+                case 0x3000:
+                case 0x180e:
+                case 0x205f:
                     return true;
                 default:
                     return false;

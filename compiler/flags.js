@@ -175,7 +175,6 @@ var TypeScript;
         FncFlags.LocalStatic = 1 << 5;
         FncFlags.GetAccessor = 1 << 6;
         FncFlags.SetAccessor = 1 << 7;
-        FncFlags.Definition = 1 << 8;
         FncFlags.Signature = 1 << 9;
         FncFlags.Method = 1 << 10;
         FncFlags.HasReturnExpression = 1 << 11;

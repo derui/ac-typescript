@@ -32,7 +32,6 @@ var TypeScript;
                     var oldType = oldSym.getType();
                     if(oldType) {
                         paramDef.typeLink.type = oldType.specializeType(pattern, replacement, checker, false);
-                        paramSym.declAST.type = paramDef.typeLink.type;
                     } else {
                         paramDef.typeLink.type = checker.anyType;
                     }
@@ -105,28 +104,44 @@ var TypeScript;
                 this.signatures = new Array();
             }
             this.signatures[this.signatures.length] = signature;
-            if(signature.declAST && !signature.declAST.isOverload && !signature.declAST.isSignature() && !TypeScript.hasFlag(signature.declAST.fncFlags, TypeScript.FncFlags.Ambient) && TypeScript.hasFlag(signature.declAST.fncFlags, TypeScript.FncFlags.Definition)) {
+            if(signature.declAST && !signature.declAST.isOverload && !signature.declAST.isSignature() && !TypeScript.hasFlag(signature.declAST.fncFlags, TypeScript.FncFlags.Ambient) && !TypeScript.hasFlag(signature.declAST.fncFlags, TypeScript.FncFlags.Signature)) {
                 this.definitionSignature = signature;
             }
         };
         SignatureGroup.prototype.toString = function () {
             return this.signatures.toString();
         };
-        SignatureGroup.prototype.toStrings = function (prefix, shortform, scope) {
+        SignatureGroup.prototype.toStrings = function (prefix, shortform, scope, getPrettyTypeName, useSignature) {
+            var _this = this;
             var result = [];
             var len = this.signatures.length;
-            if(len > 1) {
+            if(!getPrettyTypeName && len > 1) {
                 shortform = false;
             }
-            for(var i = 0; i < len; i++) {
-                if(len > 1 && this.signatures[i] == this.definitionSignature) {
-                    continue;
-                }
-                if(this.flags & TypeScript.SignatureFlags.IsIndexer) {
-                    result.push(this.signatures[i].toStringHelperEx(shortform, true, scope));
+            var getMemberNameOfSignature = function (signature) {
+                if(_this.flags & TypeScript.SignatureFlags.IsIndexer) {
+                    return signature.toStringHelperEx(shortform, true, scope);
                 } else {
-                    result.push(this.signatures[i].toStringHelperEx(shortform, false, scope, prefix));
+                    return signature.toStringHelperEx(shortform, false, scope, prefix);
                 }
+            };
+            if(useSignature) {
+                result.push(getMemberNameOfSignature(useSignature));
+            } else {
+                for(var i = 0; i < len; i++) {
+                    if(len > 1 && this.signatures[i] == this.definitionSignature) {
+                        continue;
+                    }
+                    result.push(getMemberNameOfSignature(this.signatures[i]));
+                    if(getPrettyTypeName) {
+                        break;
+                    }
+                }
+            }
+            if(getPrettyTypeName && len > 1) {
+                var lastMemberName = result[result.length - 1];
+                var overloadString = " (+ " + ((this.definitionSignature != null) ? len - 2 : len - 1) + " overload(s))";
+                lastMemberName.add(TypeScript.MemberName.create(overloadString));
             }
             return result;
         };
@@ -144,7 +159,7 @@ var TypeScript;
             if(this.signatures && ((len = this.signatures.length) > 0)) {
                 for(var i = 0; i < len; i++) {
                     for(var j = i + 1; j < len; j++) {
-                        if(this.signatures[i].declAST && this.signatures[j].declAST && (!TypeScript.hasFlag(this.signatures[i].declAST.fncFlags, TypeScript.FncFlags.Definition) && !TypeScript.hasFlag(this.signatures[j].declAST.fncFlags, TypeScript.FncFlags.Definition)) && checker.signaturesAreIdentical(this.signatures[i], this.signatures[j])) {
+                        if(this.signatures[i].declAST && this.signatures[j].declAST && (TypeScript.hasFlag(this.signatures[i].declAST.fncFlags, TypeScript.FncFlags.Signature) && TypeScript.hasFlag(this.signatures[j].declAST.fncFlags, TypeScript.FncFlags.Signature)) && checker.signaturesAreIdentical(this.signatures[i], this.signatures[j])) {
                             checker.errorReporter.simpleError(this.signatures[i].declAST, (this.signatures[i].declAST && this.signatures[i].declAST.name) ? "Signature for '" + this.signatures[i].declAST.name.actualText + "' is duplicated" : "Signature is duplicated");
                         }
                     }

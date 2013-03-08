@@ -288,6 +288,8 @@ var TypeScript;
                     (ast).withSym = null;
                 } else if(ast.nodeType == TypeScript.NodeType.Catch) {
                     (ast).containedScope = null;
+                } else if(ast.nodeType === TypeScript.NodeType.Script) {
+                    (ast).externallyVisibleImportedSymbols = [];
                 }
                 return ast;
             }
@@ -460,7 +462,7 @@ var TypeScript;
         TypeScriptCompiler.mapToJSFileName = function mapToJSFileName(fileName, wholeFileNameReplaced) {
             return TypeScriptCompiler.mapToFileNameExtension(".js", fileName, wholeFileNameReplaced);
         };
-        TypeScriptCompiler.prototype.emitUnit = function (script, reuseEmitter, emitter) {
+        TypeScriptCompiler.prototype.emitUnit = function (script, reuseEmitter, emitter, inputOutputMapper) {
             if(!script.emitRequired(this.emitSettings)) {
                 return null;
             }
@@ -470,10 +472,13 @@ var TypeScript;
                 var outFile = this.createFile(outFname, this.useUTF8ForFile(script));
                 emitter = new TypeScript.Emitter(this.typeChecker, outFname, outFile, this.emitSettings, this.errorReporter);
                 if(this.settings.mapSourceFiles) {
-                    emitter.setSourceMappings(new TypeScript.SourceMapper(fname, outFname, outFile, this.createFile(outFname + TypeScript.SourceMapper.MapFileExtension, false), this.errorReporter));
+                    emitter.setSourceMappings(new TypeScript.SourceMapper(fname, outFname, outFile, this.createFile(outFname + TypeScript.SourceMapper.MapFileExtension, false), this.errorReporter, this.settings.emitFullSourceMapPath));
+                }
+                if(inputOutputMapper) {
+                    inputOutputMapper(script.locationInfo.unitIndex, outFname);
                 }
             } else if(this.settings.mapSourceFiles) {
-                emitter.setSourceMappings(new TypeScript.SourceMapper(fname, emitter.emittingFileName, emitter.outfile, emitter.sourceMapper.sourceMapOut, this.errorReporter));
+                emitter.setSourceMappings(new TypeScript.SourceMapper(fname, emitter.emittingFileName, emitter.outfile, emitter.sourceMapper.sourceMapOut, this.errorReporter, this.settings.emitFullSourceMapPath));
             }
             this.typeChecker.locationInfo = script.locationInfo;
             emitter.emitJavascript(script, TypeScript.TokenID.Comma, false);
@@ -484,13 +489,13 @@ var TypeScript;
                 return emitter;
             }
         };
-        TypeScriptCompiler.prototype.emit = function (ioHost) {
+        TypeScriptCompiler.prototype.emit = function (ioHost, inputOutputMapper) {
             this.parseEmitOption(ioHost);
             var emitter = null;
             for(var i = 0, len = this.scripts.members.length; i < len; i++) {
                 var script = this.scripts.members[i];
                 if(this.emitSettings.outputMany || emitter == null) {
-                    emitter = this.emitUnit(script, !this.emitSettings.outputMany);
+                    emitter = this.emitUnit(script, !this.emitSettings.outputMany, null, inputOutputMapper);
                 } else {
                     this.emitUnit(script, true, emitter);
                 }
@@ -597,7 +602,7 @@ var TypeScript;
                 return enclosingScopeContext.getScope();
             }
         };
-        ScopeTraversal.prototype.getScopeEntries = function (enclosingScopeContext) {
+        ScopeTraversal.prototype.getScopeEntries = function (enclosingScopeContext, getPrettyTypeName) {
             var scope = this.getScope(enclosingScopeContext);
             if(scope == null) {
                 return [];
@@ -613,11 +618,11 @@ var TypeScript;
             }
             var svModuleDecl = this.compiler.typeChecker.currentModDecl;
             this.compiler.typeChecker.currentModDecl = enclosingScopeContext.deepestModuleDecl;
-            var result = this.getTypeNamesForNames(enclosingScopeContext, inScopeNames.getAllKeys(), scope);
+            var result = this.getTypeNamesForNames(enclosingScopeContext, inScopeNames.getAllKeys(), scope, getPrettyTypeName);
             this.compiler.typeChecker.currentModDecl = svModuleDecl;
             return result;
         };
-        ScopeTraversal.prototype.getTypeNamesForNames = function (enclosingScopeContext, allNames, scope) {
+        ScopeTraversal.prototype.getTypeNamesForNames = function (enclosingScopeContext, allNames, scope, getPrettyTypeName) {
             var result = [];
             var enclosingScope = enclosingScopeContext.getScope();
             for(var i = 0; i < allNames.length; i++) {
@@ -630,7 +635,9 @@ var TypeScript;
                 var displayThisMember = symbol && symbol.flags & TypeScript.SymbolFlags.Private ? symbol.container == scope.container : true;
                 if(symbol) {
                     if(displayThisMember && !TypeScript.isQuoted(symbol.name) && !TypeScript.isRelative(symbol.name)) {
-                        var typeName = symbol.getType().getScopedTypeName(enclosingScope);
+                        var getPrettyOverload = getPrettyTypeName && symbol.declAST && symbol.declAST.nodeType == TypeScript.NodeType.FuncDecl;
+                        var type = symbol.getType();
+                        var typeName = type ? type.getScopedTypeName(enclosingScope, getPrettyOverload) : "";
                         result.push(new ScopeEntry(name, typeName, symbol));
                     }
                 } else {

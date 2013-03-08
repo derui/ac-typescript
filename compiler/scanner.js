@@ -1,12 +1,12 @@
 var TypeScript;
 (function (TypeScript) {
     TypeScript.LexEOF = (-1);
-    TypeScript.LexCodeNWL = 10;
-    TypeScript.LexCodeRET = 13;
-    TypeScript.LexCodeLS = 8232;
-    TypeScript.LexCodePS = 8233;
-    TypeScript.LexCodeTAB = 9;
-    TypeScript.LexCodeVTAB = 11;
+    TypeScript.LexCodeNWL = 0x0A;
+    TypeScript.LexCodeRET = 0x0D;
+    TypeScript.LexCodeLS = 0x2028;
+    TypeScript.LexCodePS = 0x2029;
+    TypeScript.LexCodeTAB = 0x09;
+    TypeScript.LexCodeVTAB = 0x0B;
     TypeScript.LexCode_e = 'e'.charCodeAt(0);
     TypeScript.LexCode_E = 'E'.charCodeAt(0);
     TypeScript.LexCode_x = 'x'.charCodeAt(0);
@@ -516,18 +516,12 @@ var TypeScript;
         12704, 
         12727, 
         13312, 
-        13312, 
-        19893, 
         19893, 
         19968, 
-        19968, 
-        40869, 
         40869, 
         40960, 
         42124, 
         44032, 
-        44032, 
-        55203, 
         55203, 
         63744, 
         64045, 
@@ -578,7 +572,8 @@ var TypeScript;
         65490, 
         65495, 
         65498, 
-        65500
+        65500, 
+        
     ];
     var unicodeES3IdCont = [
         768, 
@@ -830,7 +825,8 @@ var TypeScript;
         65343, 
         65343, 
         65381, 
-        65381
+        65381, 
+        
     ];
     var unicodeES5IdStart = [
         170, 
@@ -1422,12 +1418,8 @@ var TypeScript;
         12784, 
         12799, 
         13312, 
-        13312, 
-        19893, 
         19893, 
         19968, 
-        19968, 
-        40908, 
         40908, 
         40960, 
         42124, 
@@ -1522,8 +1514,6 @@ var TypeScript;
         43968, 
         44002, 
         44032, 
-        44032, 
-        55203, 
         55203, 
         55216, 
         55238, 
@@ -1578,7 +1568,8 @@ var TypeScript;
         65490, 
         65495, 
         65498, 
-        65500
+        65500, 
+        
     ];
     var unicodeES5IdCont = [
         768, 
@@ -2014,7 +2005,8 @@ var TypeScript;
         65296, 
         65305, 
         65343, 
-        65343
+        65343, 
+        
     ];
     function LexLookUpUnicodeMap(code, map) {
         var lo = 0;
@@ -2260,9 +2252,6 @@ var TypeScript;
         SavedTokens.prototype.previousToken = function () {
             return this.prevToken;
         };
-        SavedTokens.prototype.close = function () {
-            this.currentToken = 0;
-        };
         SavedTokens.prototype.addToken = function (tok, scanner) {
             this.tokens[this.currentToken++] = new TypeScript.SavedToken(tok, scanner.startPos, scanner.pos);
         };
@@ -2293,32 +2282,6 @@ var TypeScript;
                 return TypeScript.staticTokens[TypeScript.TokenID.EndOfFile];
             }
         };
-        SavedTokens.prototype.syncToTok = function (offset) {
-            this.line = getLineNumberFromPosition(this.lineMap, offset);
-            this.currentTokenIndex = 0;
-            var tmpCol = offset - this.lineMap[this.line];
-            while((this.lexStateByLine[this.line] == LexState.InMultilineComment) && (this.line > 0)) {
-                this.line--;
-                tmpCol = 0;
-            }
-            var lenMin1 = this.lineMap.length - 1;
-            this.currentTokens = this.tokensByLine[this.line];
-            while((this.currentTokens.length == 0) && (this.line < lenMin1)) {
-                this.line++;
-                this.currentTokens = this.tokensByLine[this.line];
-                tmpCol = 0;
-            }
-            if(this.line <= lenMin1) {
-                while((this.currentTokenIndex < this.currentTokens.length) && (tmpCol > this.currentTokens[this.currentTokenIndex].limChar)) {
-                    this.currentTokenIndex++;
-                }
-                if(this.currentTokenIndex < this.currentTokens.length) {
-                    this.col = this.currentTokens[this.currentTokenIndex].minChar;
-                    return this.col + this.lineMap[this.line];
-                }
-            }
-            return -1;
-        };
         SavedTokens.prototype.lastTokenLimChar = function () {
             if(this.prevSavedToken !== null) {
                 return this.prevSavedToken.limChar;
@@ -2328,9 +2291,6 @@ var TypeScript;
         };
         SavedTokens.prototype.lastTokenHadNewline = function () {
             return this.prevLine != this.startLine;
-        };
-        SavedTokens.prototype.pushComment = function (comment) {
-            this.commentStack.push(comment);
         };
         SavedTokens.prototype.getComments = function () {
             var stack = this.commentStack;
@@ -2421,17 +2381,11 @@ var TypeScript;
         Scanner.prototype.setErrorHandler = function (reportError) {
             this.reportError = reportError;
         };
-        Scanner.prototype.setSaveScan = function (savedTokens) {
-            this.saveScan = savedTokens;
-        };
         Scanner.prototype.setText = function (newSrc, textMode) {
             this.setSourceText(new StringSourceText(newSrc), textMode);
         };
         Scanner.prototype.setScanComments = function (value) {
             this.scanComments = value;
-        };
-        Scanner.prototype.getLexState = function () {
-            return this.lexState;
         };
         Scanner.prototype.tokenStart = function () {
             this.startPos = this.pos;
@@ -2467,7 +2421,8 @@ var TypeScript;
                     atLeastOneDigit = true;
                 } else {
                     if(atLeastOneDigit) {
-                        return new TypeScript.NumberLiteralToken(parseInt(this.src.substring(this.startPos, this.pos)));
+                        var text = this.src.substring(this.startPos, this.pos);
+                        return new TypeScript.NumberLiteralToken(parseInt(text), text);
                     } else {
                         return null;
                     }
@@ -2482,7 +2437,8 @@ var TypeScript;
                     atLeastOneDigit = true;
                 } else {
                     if(atLeastOneDigit) {
-                        return new TypeScript.NumberLiteralToken(parseInt(this.src.substring(this.startPos, this.pos)));
+                        var text = this.src.substring(this.startPos, this.pos);
+                        return new TypeScript.NumberLiteralToken(parseInt(text), text);
                     } else {
                         return null;
                     }
@@ -2506,7 +2462,8 @@ var TypeScript;
                         state = NumberScanState.InEmptyFraction;
                     } else {
                         if(atLeastOneDigit) {
-                            return new TypeScript.NumberLiteralToken(parseFloat(this.src.substring(this.startPos, this.pos)), state == NumberScanState.InEmptyFraction);
+                            var text = this.src.substring(this.startPos, this.pos);
+                            return new TypeScript.NumberLiteralToken(parseFloat(text), text);
                         } else {
                             this.pos = svPos;
                             this.col = svCol;
@@ -2530,7 +2487,8 @@ var TypeScript;
                         atLeastOneDigit = false;
                     } else {
                         if(atLeastOneDigit) {
-                            return new TypeScript.NumberLiteralToken(parseFloat(this.src.substring(this.startPos, this.pos)));
+                            var text = this.src.substring(this.startPos, this.pos);
+                            return new TypeScript.NumberLiteralToken(parseFloat(text), text);
                         } else {
                             this.pos = svPos;
                             this.col = svCol;
@@ -2547,14 +2505,16 @@ var TypeScript;
                             return null;
                         }
                     } else if(state == NumberScanState.InEmptyFraction || state == NumberScanState.InFraction) {
-                        return new TypeScript.NumberLiteralToken(parseFloat(this.src.substring(this.startPos, this.pos)), state == NumberScanState.InEmptyFraction);
+                        var text = this.src.substring(this.startPos, this.pos);
+                        return new TypeScript.NumberLiteralToken(parseFloat(text), text);
                     } else {
                         if(!atLeastOneDigit) {
                             this.pos = svPos;
                             this.col = svCol;
                             return null;
                         } else {
-                            return new TypeScript.NumberLiteralToken(parseFloat(this.src.substring(this.startPos, this.pos)));
+                            var text = this.src.substring(this.startPos, this.pos);
+                            return new TypeScript.NumberLiteralToken(parseFloat(text), text);
                         }
                     }
                 } else {
@@ -2563,7 +2523,8 @@ var TypeScript;
                         this.col = svCol;
                         return null;
                     } else {
-                        return new TypeScript.NumberLiteralToken(parseFloat(this.src.substring(this.startPos, this.pos)), state == NumberScanState.InEmptyFraction);
+                        var text = this.src.substring(this.startPos, this.pos);
+                        return new TypeScript.NumberLiteralToken(parseFloat(text), text);
                     }
                 }
             }
@@ -2666,9 +2627,6 @@ var TypeScript;
                 this.tokenStart();
             }
         };
-        Scanner.prototype.tokenText = function () {
-            return this.src.substring(this.startPos, this.pos);
-        };
         Scanner.prototype.findClosingSLH = function () {
             var index = this.pos;
             var ch2 = this.src.charCodeAt(index);
@@ -2717,7 +2675,7 @@ var TypeScript;
                 }
                 if(regex) {
                     this.col = svCol + (this.pos - this.startPos);
-                    return new TypeScript.RegularExpressionLiteralToken(regex);
+                    return new TypeScript.RegularExpressionLiteralToken(this.src.substring(svPos - 1, this.pos));
                 }
             }
             this.pos = svPos;
@@ -2791,13 +2749,13 @@ var TypeScript;
                     return TypeScript.staticTokens[TypeScript.TokenID.EndOfFile];
                 }
             } else if(this.lexState == LexState.InMultilineSingleQuoteString && this.pos < this.len) {
-                this.ch = TypeScript.LexCodeAPO;
+                this.ch = this.peekChar();
                 this.lexState = LexState.Start;
-                return this.scanStringConstant();
+                return this.scanStringConstant(TypeScript.LexCodeAPO);
             } else if(this.lexState == LexState.InMultilineDoubleQuoteString && this.pos < this.len) {
-                this.ch = TypeScript.LexCodeQUO;
+                this.ch = this.peekChar();
                 this.lexState = LexState.Start;
-                return this.scanStringConstant();
+                return this.scanStringConstant(TypeScript.LexCodeQUO);
             }
             this.prevLine = this.line;
             var prevTok = this.innerScan();
@@ -2819,9 +2777,7 @@ var TypeScript;
             this.seenUnicodeChar = this.seenUnicodeChar || valid;
             return valid;
         };
-        Scanner.prototype.scanStringConstant = function () {
-            var endCode = this.ch;
-            this.nextChar();
+        Scanner.prototype.scanStringConstant = function (endCode) {
             scanStringConstantLoop:
 for(; ; ) {
                 switch(this.ch) {
@@ -2858,9 +2814,9 @@ for(; ; ) {
                                 if(this.ch == TypeScript.LexCodeRET && this.peekCharAt(this.pos + 1) == TypeScript.LexCodeNWL) {
                                     this.nextChar();
                                 }
-                                this.nextChar();
                                 this.newLine();
                                 if(this.mode == LexMode.Line) {
+                                    this.nextChar();
                                     this.lexState = endCode == TypeScript.LexCodeAPO ? LexState.InMultilineSingleQuoteString : LexState.InMultilineDoubleQuoteString;
                                     break scanStringConstantLoop;
                                 }
@@ -3007,7 +2963,9 @@ while(this.pos < this.len) {
                     this.nextChar();
                     return TypeScript.staticTokens[TypeScript.TokenID.Semicolon];
                 } else if((this.ch == TypeScript.LexCodeAPO) || (this.ch == TypeScript.LexCodeQUO)) {
-                    return this.scanStringConstant();
+                    var endCode = this.ch;
+                    this.nextChar();
+                    return this.scanStringConstant(endCode);
                 } else if(autoToken[this.ch]) {
                     var atok = autoToken[this.ch];
                     if(atok.tokenId == TypeScript.TokenID.OpenBrace) {
@@ -3041,11 +2999,11 @@ while(this.pos < this.len) {
                             } else {
                                 this.interveningWhitespace = true;
                             }
-                        case 255:
-                        case 254:
-                        case 239:
-                        case 187:
-                        case 191:
+                        case 0xFF:
+                        case 0xFE:
+                        case 0xEF:
+                        case 0xBB:
+                        case 0xBF:
                         case TypeScript.LexCodeLS:
                         case TypeScript.LexCodePS:
                         case TypeScript.LexCodeNWL:

@@ -283,8 +283,10 @@ module Formatting {
             if (path.isListOfObjectLit()) {
                 // Because of the peculiarities of the formatting engnine, 
                 // we want the list to *not* have the same span as the object literal AST.
-                Formatting.Debug.Assert(path.parent().minChar == path.ast().minChar, "Assumption about AST minChar position is not verified");
-                Formatting.Debug.Assert(path.parent().limChar == path.ast().limChar, "Assumption about AST limChar position is not verified");
+                if (!path.parent().isParenthesized) {
+                    Formatting.Debug.Assert(path.parent().minChar == path.ast().minChar, "Assumption about AST minChar position is not verified");
+                    Formatting.Debug.Assert(path.parent().limChar == path.ast().limChar, "Assumption about AST limChar position is not verified");
+                }
                 result.StartOffset = ast.minChar + 1;
                 result.EndOffset = ast.limChar - 1;
             }
@@ -727,7 +729,7 @@ module Formatting {
                             return funcDecl.minChar; // TODO: Is this really the "function" keyword?
 
                         case AuthorParseNodeProperty.apnpLCurlyMin:
-                            if (bod !== null) {
+                            if (bod !== null && bod.minChar > 0) {
                                 return bod.minChar;
                             }
                             else {
@@ -735,7 +737,7 @@ module Formatting {
                             }
 
                         case AuthorParseNodeProperty.apnpRCurlyMin:
-                            if (bod !== null) {
+                            if (bod !== null && bod.limChar > 0) {
                                 return bod.limChar - 1; // need to return *starting* position of curly
                             }
                             else {
@@ -743,7 +745,7 @@ module Formatting {
                             }
 
                         case AuthorParseNodeProperty.apnpRParenMin:
-                            if (funcDecl.arguments != null) {
+                            if (funcDecl.arguments != null && funcDecl.arguments.limChar > 0) {
                                 return funcDecl.arguments.limChar - 1; // need to return *starting* position of curly
                             }
                     }

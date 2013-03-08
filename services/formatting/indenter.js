@@ -36,6 +36,9 @@ var Formatting;
             if(this.scriptBlockBeginLineNumber == token.lineNumber()) {
                 return result;
             }
+            if(!sameLineIndent && this.IsMultiLineString(token)) {
+                return result;
+            }
             indentationInfo = this.GetSpecialCaseIndentation(token, node);
             if(indentationInfo == null) {
                 while(!node.CanIndent() && node.Parent != null && token.Span.span.start() == node.Parent.AuthorNode.Details.StartOffset) {
@@ -459,6 +462,9 @@ var Formatting;
             if(updateStartOffset) {
                 Formatting.ParseNodeExtensions.SetNodeSpan(node, token.Span.startPosition(), node.AuthorNode.Details.EndOffset);
             }
+        };
+        Indenter.prototype.IsMultiLineString = function (token) {
+            return token.tokenID === TypeScript.TokenID.StringLiteral && this.snapshot.GetLineNumberFromPosition(token.Span.endPosition()) > this.snapshot.GetLineNumberFromPosition(token.Span.startPosition());
         };
         return Indenter;
     })();

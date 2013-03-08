@@ -124,18 +124,22 @@ function completion(query) {
     var base = query['file'];
     var line = parseInt(query['line']);
     var column = parseInt(query['column']);
-    console.log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column);
+    console.log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column
+                + 'member : ' + isMember);
 
     if (lsCache == null) {
-         lsCache = typescriptLS.getLanguageService();
+        lsCache = typescriptLS.getLanguageService();
     }
+
     var position = typescriptLS.lineColToPosition(base, line, column);
     return lsCache.languageService.getCompletionsAtPosition(base, position, isMember).entries;
 }
 
 function updateFile(query) {
-    console.log('update file : file [' + query['file'] + ']');
-    typescriptLS.addFile(query['file'], true);
+    var content = decodeURIComponent(query['content']);
+    console.log('update file : file [' + query['file'] + '] : length -> ' + content.length);
+
+    typescriptLS.updateScript(query['file'], content, true);
 
     lsCache = typescriptLS.getLanguageService();
     return '';
@@ -146,7 +150,7 @@ function updateScript(query) {
                 query['prev'] + ' : ' + query['next'] + ' => ' + query['text']);
 
     typescriptLS.editScript(query['file'], parseInt(query['prev']), parseInt(query['next']),
-                            query['text']);
+                            decodeURIComponent(query['text']));
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
@@ -158,11 +162,12 @@ var methodHandler = {
     'update' : updateScript
 };
 
-var WebSocketServer = require('ws').Server, wss = new WebSocketServer({port: port});
+var sockjs = require('sockjs');
+var completionServer = sockjs.createServer();
 
-wss.on('connection', (ws) => {
+completionServer.on('connection', (ws) => {
     console.log("client connected");
-    ws.on('message', (data) => {
+    ws.on('data', (data) => {
         var json = JSON.parse(data);
 
         if (json['method'] && methodHandler[json['method']]) {
@@ -173,8 +178,12 @@ wss.on('connection', (ws) => {
                 console.log(e);
             }
             if (json['method'] && json['method'] === 'completion') {
-                 ws.send(JSON.stringify(response));
+                 ws.write(JSON.stringify(response));
             }
         }
     });
 });
+
+var server = http.createServer();
+completionServer.installHandlers(server, {});
+server.listen(port, "localhost");

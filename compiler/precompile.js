@@ -72,6 +72,7 @@ var TypeScript;
             this.moduleGenTarget = TypeScript.ModuleGenTarget.Synchronous;
             this.outputOption = "";
             this.mapSourceFiles = false;
+            this.emitFullSourceMapPath = false;
             this.generateDeclarationFiles = false;
             this.useCaseSensitiveFileResolution = false;
         }
@@ -94,6 +95,8 @@ var TypeScript;
             return {
                 minChar: 0,
                 limChar: 0,
+                startLine: 0,
+                startCol: 0,
                 path: TypeScript.switchToForwardSlashes(adjustedPath),
                 isResident: isResident
             };
@@ -214,6 +217,8 @@ var TypeScript;
                                     var ref = {
                                         minChar: scanner.startPos,
                                         limChar: scanner.pos,
+                                        startLine: scanner.line,
+                                        startCol: scanner.col,
                                         path: TypeScript.stripQuotes(TypeScript.switchToForwardSlashes(tok.getText())),
                                         isResident: false
                                     };
@@ -240,6 +245,16 @@ var TypeScript;
                 if(referencedCode) {
                     referencedCode.minChar = comment.startPos;
                     referencedCode.limChar = referencedCode.minChar + comment.value.length;
+                    var result = {
+                        line: -1,
+                        col: -1
+                    };
+                    TypeScript.getSourceLineColFromMap(result, comment.startPos, scanner.lineMap);
+                    if(result.col >= 0) {
+                        result.col++;
+                    }
+                    referencedCode.startLine = result.line;
+                    referencedCode.startCol = result.col;
                     referencedFiles.push(referencedCode);
                 }
                 if(settings) {

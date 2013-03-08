@@ -502,13 +502,13 @@ var TypeScript;
     TypeScript.Token = Token;    
     var NumberLiteralToken = (function (_super) {
         __extends(NumberLiteralToken, _super);
-        function NumberLiteralToken(value, hasEmptyFraction) {
+        function NumberLiteralToken(value, text) {
                 _super.call(this, TokenID.NumberLiteral);
             this.value = value;
-            this.hasEmptyFraction = hasEmptyFraction;
+            this.text = text;
         }
         NumberLiteralToken.prototype.getText = function () {
-            return this.hasEmptyFraction ? this.value.toString() + ".0" : this.value.toString();
+            return this.text;
         };
         NumberLiteralToken.prototype.classification = function () {
             return TokenClass.NumberLiteral;
@@ -583,12 +583,12 @@ var TypeScript;
     TypeScript.CommentToken = CommentToken;    
     var RegularExpressionLiteralToken = (function (_super) {
         __extends(RegularExpressionLiteralToken, _super);
-        function RegularExpressionLiteralToken(regex) {
+        function RegularExpressionLiteralToken(text) {
                 _super.call(this, TokenID.RegularExpressionLiteral);
-            this.regex = regex;
+            this.text = text;
         }
         RegularExpressionLiteralToken.prototype.getText = function () {
-            return this.regex.toString();
+            return this.text;
         };
         RegularExpressionLiteralToken.prototype.classification = function () {
             return TokenClass.RegExpLiteral;

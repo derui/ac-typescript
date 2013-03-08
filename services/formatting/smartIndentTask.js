@@ -26,6 +26,13 @@ var Formatting;
         SmartIndentTask.prototype.FindIndentation = function (tree) {
             var caretSpan = this.snapshotSpan.span;
             var context = Formatting.ParseTree.FindCommonParentNode(caretSpan, caretSpan, tree.Root);
+            if(context && context.AuthorNode.Details.nodeType == TypeScript.NodeType.QString) {
+                var nodeSpan = Formatting.Span.FromBounds(context.AuthorNode.Details.StartOffset, context.AuthorNode.Details.EndOffset);
+                if(nodeSpan.Contains(caretSpan)) {
+                    this.DesiredIndentation = "";
+                    return;
+                }
+            }
             while(context != null && context.AuthorNode.Details.StartOffset == caretSpan.start() && !(context.AuthorNode.Details.Kind == Formatting.AuthorParseNodeKind.apnkBlock && context.AuthorNode.Details.Flags != Formatting.AuthorParseNodeFlags.apnfSyntheticNode)) {
                 context = context.Parent;
             }

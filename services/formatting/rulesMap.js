@@ -58,7 +58,7 @@ var Formatting;
     })();
     Formatting.RulesMap = RulesMap;    
     var MaskBitSize = 5;
-    var Mask = 31;
+    var Mask = 0x1f;
     (function (Position) {
         Position._map = [];
         Position.IgnoreRulesSpecific = 0;

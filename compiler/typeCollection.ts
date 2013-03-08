@@ -212,6 +212,22 @@ module TypeScript {
         var symbol = scopeChain.scope.findLocal(modName, false, false);
         var typeSymbol: TypeSymbol = null;
         var modType: ModuleType = null;
+
+        if (symbol && symbol.declAST && symbol.declAST.nodeType != NodeType.ModuleDeclaration) {
+            context.checker.errorReporter.simpleError(moduleDecl, "Conflicting symbol name for module '" + modName + "'");
+            // Create a new type symbol for the module but keep it anonyms
+            symbol = null;
+            modName = "";
+        }
+
+        if (symbol) {
+            var modDeclAST = <ModuleDeclaration>symbol.declAST;
+            var modDeclASTIsExported = hasFlag(modDeclAST.modFlags, ModuleFlags.Exported);
+            if ((modDeclASTIsExported && !isExported) || (!modDeclASTIsExported && isExported)) {
+                context.checker.errorReporter.simpleError(moduleDecl, 'All contributions to a module must be "export" or none');
+            }
+        }
+
         if ((symbol == null) || (symbol.kind() != SymbolKind.Type)) {
 
             if (modType == null) {
@@ -242,9 +258,6 @@ module TypeScript {
             modType.symbol = typeSymbol;
         }
         else {
-            if (symbol && symbol.declAST && symbol.declAST.nodeType != NodeType.ModuleDeclaration) {
-                context.checker.errorReporter.simpleError(moduleDecl, "Conflicting symbol name for module '" + modName + "'");
-            }
             typeSymbol = <TypeSymbol>symbol;
 
             // initialize new private scope for the type
@@ -745,6 +758,11 @@ module TypeScript {
             if (fgSym && !(fgSym.kind() == SymbolKind.Type) && funcDecl.isMethod() && !funcDecl.isAccessor() && !funcDecl.isConstructor) {
                 context.checker.errorReporter.simpleError(funcDecl, "Function or method '" + funcDecl.name.actualText + "' already declared as a property");
                 fgSym.type = context.checker.anyType;
+            }
+            // If the current function is accessor and the existing symbol isnt, set the symbol to null so
+            // we could error about duplicate symbol
+            if (fgSym && !fgSym.isAccessor() && funcDecl.isAccessor()) {
+                fgSym = null;
             }
             var sig = context.checker.createFunctionSignature(funcDecl, containerSym, containerScope, fgSym, !foundSymbol);
 
