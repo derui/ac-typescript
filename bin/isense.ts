@@ -88,7 +88,6 @@ var typescriptLS = new services.TypeScriptLS();
 
 typescriptLS.addDefaultLibrary();
 
-var ws = require('socket.io');
 var http = require('http');
 
 var lsCache = null;
@@ -134,9 +133,10 @@ function completion(query) {
     return lsCache.languageService.getCompletionsAtPosition(base, position, isMember).entries;
 }
 
-function updateFile(query, post) {
+function updateFile(query) {
     console.log('update file : file [' + query['file'] + ']');
-    typescriptLS.updateScript(query['file'], post, true);
+    typescriptLS.addFile(query['file'], true);
+
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
@@ -158,24 +158,23 @@ var methodHandler = {
     'update' : updateScript
 };
 
-var server = http.createServer(function () {}).listen(port, '127.0.0.1');
+var WebSocketServer = require('ws').Server, wss = new WebSocketServer({port: port});
 
-var io = ws.listen(server);
-io.set("destroy upgrade", false);
+wss.on('connection', (ws) => {
+    console.log("client connected");
+    ws.on('message', (data) => {
+        var json = JSON.parse(data);
 
- io.on('connection', (socket) => {
-    socket.on('message', (data) => {
-        console.log(data);
-        var data = JSON.parse(data);
-
-        if (data['method'] && methodHandler[data['method']]) {
-            response = methodHandler[data['method']](data);
-        }
-
-        if (data['method'] && data['method'] === 'completion') {
-            server.clients.forEach((client) => {
-                client.send(JSON.stringify(response));
-            });
+        if (json['method'] && methodHandler[json['method']]) {
+            var response = "";
+            try {
+                response = methodHandler[json['method']](json);
+            } catch (e) {
+                console.log(e);
+            }
+            if (json['method'] && json['method'] === 'completion') {
+                 ws.send(JSON.stringify(response));
+            }
         }
     });
 });

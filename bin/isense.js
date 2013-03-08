@@ -81,7 +81,6 @@ var port = parseInt(opts['port']) || 8124;
 var services = require('./typeScriptCompletion')
 var typescriptLS = new services.TypeScriptLS();
 typescriptLS.addDefaultLibrary();
-var ws = require('socket.io');
 var http = require('http');
 var lsCache = null;
 function addFile(query) {
@@ -117,9 +116,9 @@ function completion(query) {
     var position = typescriptLS.lineColToPosition(base, line, column);
     return lsCache.languageService.getCompletionsAtPosition(base, position, isMember).entries;
 }
-function updateFile(query, post) {
+function updateFile(query) {
     console.log('update file : file [' + query['file'] + ']');
-    typescriptLS.updateScript(query['file'], post, true);
+    typescriptLS.addFile(query['file'], true);
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
@@ -135,21 +134,24 @@ var methodHandler = {
     'update-file': updateFile,
     'update': updateScript
 };
-var server = http.createServer(function () {
-}).listen(port, '127.0.0.1');
-var io = ws.listen(server);
-io.set("destroy upgrade", false);
-io.on('connection', function (socket) {
-    socket.on('message', function (data) {
-        console.log(data);
-        var data = JSON.parse(data);
-        if(data['method'] && methodHandler[data['method']]) {
-            response = methodHandler[data['method']](data);
-        }
-        if(data['method'] && data['method'] === 'completion') {
-            server.clients.forEach(function (client) {
-                client.send(JSON.stringify(response));
-            });
+var WebSocketServer = require('ws').Server, wss = new WebSocketServer({
+    port: port
+});
+wss.on('connection', function (ws) {
+    console.log("client connected");
+    ws.on('message', function (data) {
+        var json = JSON.parse(data);
+        if(json['method'] && methodHandler[json['method']]) {
+            var response = "";
+            try  {
+                response = methodHandler[json['method']](json);
+            } catch (e) {
+                console.log(e);
+            }
+            if(json['method'] && json['method'] === 'completion') {
+                ws.send(JSON.stringify(response));
+            }
         }
     });
 });
+console;

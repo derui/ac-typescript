@@ -130,10 +130,10 @@
       ))
   )
 
-(defun ac-typescript/update (&rest target-buffer)
+(defun ac-typescript/update (target-buffer)
   "Register current buffer file to completion server."
   (interactive)
-  (when (eq major-mode 'typescript-mode)
+  (with-current-buffer target-buffer
     (let* ((buffer (if target-buffer target-buffer (current-buffer)))
            (buffer-filename (buffer-file-name buffer))
            (contents (buffer-substring-no-properties (point-min) (point-max)))
@@ -183,32 +183,32 @@
                                  'ac-typescript/auto-update-each-buffer)))
   (add-hook 'after-save-hook 'ac-typescript/register)
 
-  (defadvice ac-handle-pre-command (before ac-typescript/save-current-position () activate)
-    (when (ac-typescript/typescriptp (current-buffer))
-      (setq ac-typescript/modify-position-store (point))
-      (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))))
+  ;; (defadvice ac-handle-pre-command (before ac-typescript/save-current-position () activate)
+  ;;   (when (ac-typescript/typescriptp (current-buffer))
+  ;;     (setq ac-typescript/modify-position-store (point))
+  ;;     (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))))
 
-  (defadvice ac-handle-post-command (before ac-typescript/update-script-with-modified () activate)
-    (when (and (ac-typescript/typescriptp (current-buffer))
-               ac-typescript/modify-position-store
-               (not (equal ac-typescript/buffer-modified-tick
-                                        (buffer-modified-tick (current-buffer))))
-               )
-      (let* ((current (point))
-             (previous ac-typescript/modify-position-store)
-             (text (if (and (not (equal ac-typescript/buffer-modified-tick
-                                        (buffer-modified-tick (current-buffer))))
-                            (> current previous))
-                       (buffer-substring-no-properties previous current)
-                     "")))
-        (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))
-        (ac-typescript/edit-script (current-buffer) previous
-                                   current text))
-      )
-    )
+  ;; (defadvice ac-handle-post-command (before ac-typescript/update-script-with-modified () activate)
+  ;;   (when (and (ac-typescript/typescriptp (current-buffer))
+  ;;              ac-typescript/modify-position-store
+  ;;              (not (equal ac-typescript/buffer-modified-tick
+  ;;                                       (buffer-modified-tick (current-buffer))))
+  ;;              )
+  ;;     (let* ((current (point))
+  ;;            (previous ac-typescript/modify-position-store)
+  ;;            (text (if (and (not (equal ac-typescript/buffer-modified-tick
+  ;;                                       (buffer-modified-tick (current-buffer))))
+  ;;                           (> current previous))
+  ;;                      (buffer-substring-no-properties previous current)
+  ;;                    "")))
+  ;;       (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))
+  ;;       (ac-typescript/edit-script (current-buffer) previous
+  ;;                                  current text))
+  ;;     )
+  ;;   )
 
-  (ad-enable-advice 'ac-handle-pre-command 'before 'ac-typescript/save-current-position)
-  (ad-enable-advice 'ac-handle-post-command 'before 'ac-typescript/update-script-with-modified)
+  ;; (ad-enable-advice 'ac-handle-pre-command 'before 'ac-typescript/save-current-position)
+  ;; (ad-enable-advice 'ac-handle-post-command 'before 'ac-typescript/update-script-with-modified)
 
   (when (and ac-typescript/auto-register
              (ac-typescript-server/server-running-p))

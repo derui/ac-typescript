@@ -78,7 +78,7 @@ var TypeScriptLS = (function () {
             if(err) {
                 throw err;
             }
-            _this.addScript(name, data, isResident);
+            _this.updateScript(name, data, isResident);
         });
     };
     TypeScriptLS.prototype.addScript = function (name, content, isResident) {
