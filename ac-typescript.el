@@ -167,7 +167,6 @@
   "Update registered script with previous and current point what edit on the buffer"
   (when (ac-typescript/typescriptp (current-buffer))
     (let ((contents (buffer-substring-no-properties begin end)))
-      (edebug-stop)
        (if (= begin end)
            ;; if remove some text
            (ac-typescript-client/update-buffer-region

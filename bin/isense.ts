@@ -118,7 +118,8 @@ function completion(query) {
 
     var isMember = false;
     if (query['member']) {
-        isMember = query['member'] === '1' ? true : false;
+        console.log("member is " + query['member']);
+        isMember = query['member'] === 1 ? true : false;
     }
 
     var base = query['file'];
@@ -160,6 +161,7 @@ var methodHandler = {
     'completion' : completion,
     'update-file' : updateFile,
     'update' : updateScript
+
 };
 
 var sockjs = require('sockjs');
