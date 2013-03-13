@@ -24,7 +24,7 @@
   (require 'cl))
 (require 'json)
 (require 'url)
-(require 'deferred)
+(require 'websocket)
 
 (defcustom ac-typescript-client/client-executable
   (executable-find "curl")
@@ -36,8 +36,11 @@
   'ac-typescript-server/server-port
   "Variable symbol to be used as port for isense server")
 
+(defvar ac-typescript-client/ws nil
+  "Websocket structure for typescript completion server")
+
 (defvar ac-typescript-client/server-address
-  "http://localhost"
+  "ws://localhost"
   "Server address")
 
 (defvar ac-typescript-client/log-buffer "*ac-typescript-client Logs"
@@ -50,21 +53,24 @@
   3
   "Second to connection timeout from server")
 
-(defvar ac-typescript-client/add-file-request-format
-  "/?method=add&file=%s"
+(defvar ac-typescript-client/add-file-message-format
+  "{\"method\":\"add\", \"file\": \"%s\"}"
   "Format when send request to server to add file for using completion")
 
-(defvar ac-typescript-client/update-buffer-request-format
-  "/?method=update&file=%s&prev=%d&next=%d&text=%s"
+(defvar ac-typescript-client/update-buffer-message-format
+  "{\"method\": \"update\", \"file\": \"%s\", \"next\":%d, \"prev\": %d, \"text\":\"%s\"}"
   "Format when send request to server to update region of file for using completion")
 
-(defvar ac-typescript-client/update-file-request-format
-  "/?method=update-file&file=%s"
+(defvar ac-typescript-client/update-file-message-format
+  "{\"method\": \"update-file\", \"file\": \"%s\", \"content\": \"%s\"}"
   "Format when send request to server to update file for using completion")
 
-(defvar ac-typescript-client/completion-request-format
-  "/?method=completion&file=%s&line=%d&column=%d&member=%d"
+(defvar ac-typescript-client/completion-message-format
+  "{\"method\": \"completion\", \"file\":\"%s\",\"line\":%d,\"column\":%d, \"member\":%d}"
   "Format when send request to server to get completion list")
+
+(defvar ac-typescript-client/candidate nil)
+(defvar ac-typescript-client/completion-sync nil)
 
 (defun ac-typescript-client/logger (log)
   "output log to client's log buffer"
@@ -75,91 +81,109 @@
       (newline))
     ))
 
-(defun ac-typescript-client/make-query (query)
-  (concat "\"" ac-typescript-client/server-address
-          ":"
-          (symbol-value ac-typescript-client/server-port-variable)
-          query "\""))
+(defun ac-typescript-client/ws-message (websocket frame)
+  (let ((completion (websocket-frame-payload frame)))
+    (setq ac-typescript-client/candidate completion))
+  (when ac-typescript-client/completion-sync
+    (setq ac-typescript-client/completion-sync nil)))
 
-(defun ac-typescript-client/run-process (query &rest callback)
-  (ac-typescript-client/logger
-   (format "Running http client with : %s" query))
+(defun ac-typescript-client/ws-opened (websocket)
+  "Execute when websocket connection is opened."
+  (ac-typescript-client/logger "websocket opened"))
 
-  (lexical-let ((q query))
-    (deferred:$
-      (deferred:process-shell ac-typescript-client/client-executable
-        "--connect-timeout" (int-to-string ac-typescript-client/timeout-second)
-        "-s"
-        q)
-      (deferred:nextc it
-        (lambda (result)
-          (when ac-typescript-client/debug-mode
-            (ac-typescript-client/logger result))
-          (when callback
-            (funcall callback result))))
-      (deferred:error it
-        (lambda (err)
-          (ac-typescript-client/logger err)))))
+(defun ac-typescript-client/ws-closed (websocket)
+  "Execute when websocket connection is closed."
+  (message "connection closed")
+  (ac-typescript-client/logger websocket)
+  (setq ac-typescript-client/ws nil))
+
+(defun ac-typescript-client/ws-open-p ()
+  "Return whether websocket connection open or not."
+  (and ac-typescript-client/ws
+       (websocket-openp ac-typescript-client/ws))
   )
 
-(defun ac-typescript-client/run-process-sync (query)
-  (ac-typescript-client/logger
-   (format "Running http client with : %s" query))
-  (with-temp-buffer
-    (let ((ret (call-process-shell-command ac-typescript-client/client-executable
-                             nil t nil
-                             "--connect-timeout" (int-to-string ac-typescript-client/timeout-second)
-                             "-s"
-                             query)))
-      (unless (zerop ret)
-        (error "Running synchronous process occured error!"))
+(defun ac-typescript-client/make-address ()
+  "Make address for websocket connection."
+  (concat ac-typescript-client/server-address ":"
+          (symbol-value ac-typescript-client/server-port-variable)
+          "/websocket"
+          )
+  )
 
-      (let ((result (buffer-substring-no-properties (point-min) (point-max))))
-        (ac-typescript-client/logger result)
-        (json-read-from-string result)
+(defun ac-typescript-client/open-websocket ()
+  "Open websocket protocol to completion server.
+If connecting it failed, websocket structure set nil
+"
+  (when (not (ac-typescript-client/ws-open-p))
+    (let ((ws (websocket-open
+               (ac-typescript-client/make-address)
+               :on-open (lambda (websocket) (ac-typescript-client/ws-opened websocket))
+               :on-message (lambda (websocket frame) (ac-typescript-client/ws-message websocket frame))
+               :on-close (lambda (websocket) (ac-typescript-client/ws-closed websocket)))))
+      (setq ac-typescript-client/ws ws)
       )
-    )
-  ))
+    ))
+
+(defun ac-typescript-client/send-message (message)
+  "Send message to websocket opened."
+  (when (and (not (ac-typescript-client/ws-open-p))
+             (ac-typescript-server/server-running-p))
+    (ac-typescript-client/open-websocket))
+  (websocket-send-text ac-typescript-client/ws
+                       message)
+  )
+
+(defun ac-typescript-clinet/close-websocket ()
+  "Close websocket."
+  (interactive)
+  (websocket-close ac-typescript-client/ws))
 
 (defun ac-typescript-client/update-buffer-region (buffer prev next text)
   "Send request that update region of given file to completion server"
   (ac-typescript-client/logger (format "Update file to completion server : file : %s %d %d %s"
                                        buffer prev next text))
   (let* ((original (expand-file-name (buffer-file-name buffer)))
-         (query (ac-typescript-client/make-query
-                 (format ac-typescript-client/update-buffer-request-format original
-                         prev next (json-encode text)))))
+         (query))
     (when (file-exists-p original)
-      (ac-typescript-client/run-process query)))
+      (ac-typescript-client/send-message (format ac-typescript-client/update-buffer-message-format original
+                                                 prev next (url-hexify-string text)))
+      ))
   )
-
 
 (defun ac-typescript-client/add-file (filename)
   "Send request that add given file to completion server"
   (ac-typescript-client/logger (format "Add file to completion server : file : %s"
                                        filename))
   (when (file-exists-p (expand-file-name filename))
-    (ac-typescript-client/run-process
-     (ac-typescript-client/make-query (format ac-typescript-client/add-file-request-format
-                                              (url-hexify-string (expand-file-name filename)))))
-    )
+    (ac-typescript-client/send-message
+     (format ac-typescript-client/add-file-message-format
+             (expand-file-name filename))))
   )
 
 (defun ac-typescript-client/get-completion-list (filename line column member)
   "Get completion list for filename at position that is composed of line and column."
 
   (when (file-exists-p (expand-file-name filename))
-    (let ((query (format ac-typescript-client/completion-request-format
+    (let ((query (format ac-typescript-client/completion-message-format
                          (url-hexify-string (expand-file-name filename)) line column
                          (if (not member) 0 1))))
       (ac-typescript-client/logger (format "Get completion list : query : %s" query))
-      (ac-typescript-client/run-process-sync
-       (ac-typescript-client/make-query
-        (format ac-typescript-client/completion-request-format
-                (url-hexify-string (expand-file-name filename)) line column (if (not member)
-                                                                                 0 1)))
-        )
-       )))
+      (setq ac-typescript-client/completion-sync t)
+      (ac-typescript-client/send-message
+       (format ac-typescript-client/completion-message-format
+               (expand-file-name filename) line column (if (not member)
+                                                           0 1)))
+      (let ((timeout 3) (time 0))
+        (while (and (> timeout time) ac-typescript-client/completion-sync)
+          (sit-for 0.1)
+          (setq time (+ time 0.1))))
+      (setq ac-typescript-client/completion-sync nil)
+      (let ((candidate ac-typescript-client/candidate))
+        (setq ac-typescript-client/candidate nil)
+        (json-read-from-string candidate))
+      )
+    ))
 
 (defun ac-typescript-client/current-pos ()
   "Get current buffer position as line and column"
@@ -171,16 +195,14 @@
     (column . ,(- (point) (line-beginning-position))))
   )
 
-(defun ac-typescript-client/update-file (original filename)
+(defun ac-typescript-client/update-file (original content)
   "Send request that update given file to completion server"
   (ac-typescript-client/logger (format "Update file to completion server"))
-  (let* ((original (expand-file-name original))
-         (query (ac-typescript-client/make-query
-                 (format ac-typescript-client/update-file-request-format original))))
+  (let* ((original (expand-file-name original)))
     (when (file-exists-p original)
-      (ac-typescript-client/run-process
-       (concat "--data-binary '@" filename "' " query)
-       )))
-  )
+      (ac-typescript-client/send-message
+       (format ac-typescript-client/update-file-message-format original
+               (url-hexify-string content))))
+    ))
 
 (provide 'ac-typescript-client)

@@ -16,7 +16,7 @@ var TypeScript;
     })();
     TypeScript.SourceMapping = SourceMapping;    
     var SourceMapper = (function () {
-        function SourceMapper(tsFileName, jsFileName, jsFile, sourceMapOut, errorReporter) {
+        function SourceMapper(tsFileName, jsFileName, jsFile, sourceMapOut, errorReporter, emitFullPathOfSourceMap) {
             this.jsFile = jsFile;
             this.sourceMapOut = sourceMapOut;
             this.errorReporter = errorReporter;
@@ -29,6 +29,12 @@ var TypeScript;
             this.jsFileName = TypeScript.getPrettyName(jsFileName, false, true);
             var removalIndex = jsFileName.lastIndexOf(this.jsFileName);
             var fixedPath = jsFileName.substring(0, removalIndex);
+            if(emitFullPathOfSourceMap) {
+                if(jsFileName.indexOf("://") == -1) {
+                    jsFileName = "file:///" + jsFileName;
+                }
+                this.jsFileName = jsFileName;
+            }
             this.tsFileName = TypeScript.getRelativePathToFixedPath(fixedPath, tsFileName);
         }
         SourceMapper.MapFileExtension = ".map";
@@ -95,15 +101,13 @@ var TypeScript;
                 recordSourceMappingSiblings(sourceMapper.sourceMappings, -1);
                 namesCount = namesCount + sourceMapper.names.length;
             }
-            if(mappingsString != "") {
-                sourceMapOut.Write(JSON2.stringify({
-                    version: 3,
-                    file: sourceMapper.jsFileName,
-                    sources: tsFiles,
-                    names: namesList,
-                    mappings: mappingsString
-                }));
-            }
+            sourceMapOut.Write(JSON2.stringify({
+                version: 3,
+                file: sourceMapper.jsFileName,
+                sources: tsFiles,
+                names: namesList,
+                mappings: mappingsString
+            }));
             try  {
                 sourceMapOut.Close();
             } catch (ex) {

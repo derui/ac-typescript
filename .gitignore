@@ -1,1 +1,2 @@
 *.elc
+/node_modules

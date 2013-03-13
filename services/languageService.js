@@ -234,9 +234,11 @@ var Services;
     })();
     Services.DefinitionInfo = DefinitionInfo;    
     var TypeInfo = (function () {
-        function TypeInfo(memberName, docComment, minChar, limChar) {
+        function TypeInfo(memberName, docComment, fullSymbolName, kind, minChar, limChar) {
             this.memberName = memberName;
             this.docComment = docComment;
+            this.fullSymbolName = fullSymbolName;
+            this.kind = kind;
             this.minChar = minChar;
             this.limChar = limChar;
         }
@@ -304,6 +306,7 @@ var Services;
             this.type = "";
             this.kind = "";
             this.kindModifiers = "";
+            this.fullSymbolName = "";
             this.docComment = "";
         }
         return CompletionEntry;
@@ -318,8 +321,10 @@ var Services;
         ScriptElementKind.classElement = "class";
         ScriptElementKind.interfaceElement = "interface";
         ScriptElementKind.enumElement = "enum";
-        ScriptElementKind.variableElement = "variable";
+        ScriptElementKind.variableElement = "var";
+        ScriptElementKind.localVariableElement = "local var";
         ScriptElementKind.functionElement = "function";
+        ScriptElementKind.localFunctionElement = "local function";
         ScriptElementKind.memberFunctionElement = "method";
         ScriptElementKind.memberGetAccessorElement = "getter";
         ScriptElementKind.memberSetAccessorElement = "setter";
@@ -328,6 +333,7 @@ var Services;
         ScriptElementKind.callSignatureElement = "call";
         ScriptElementKind.indexSignatureElement = "index";
         ScriptElementKind.constructSignatureElement = "construct";
+        ScriptElementKind.parameterElement = "parameter";
         return ScriptElementKind;
     })();
     Services.ScriptElementKind = ScriptElementKind;    
@@ -427,19 +433,54 @@ var Services;
             this.refresh();
             return this.compilerState.getScriptAST(fileName);
         };
+        LanguageService.prototype.getTypeInfo = function (type, symbol, typeInfoAtPosition, enclosingScopeContext) {
+            var memberName = null;
+            var kind = "";
+            var docComment = "";
+            var symbolName = "";
+            var scopeSymbol = enclosingScopeContext.getScope();
+            if(typeInfoAtPosition.ast.nodeType == TypeScript.NodeType.Dot) {
+                return null;
+            }
+            if(symbol.declAST && symbol.declAST.nodeType == TypeScript.NodeType.FuncDecl && (symbol.declAST).accessorSymbol) {
+                symbol = (symbol.declAST).accessorSymbol;
+                type = symbol.getType();
+            }
+            if(typeInfoAtPosition.callSignature) {
+                var signatureGroup = null;
+                if(typeInfoAtPosition.isNew) {
+                    signatureGroup = type.construct;
+                } else {
+                    signatureGroup = type.call;
+                }
+                var memberNames = new TypeScript.MemberNameArray();
+                memberNames.addAll(signatureGroup.toStrings("", true, scopeSymbol, true, typeInfoAtPosition.callSignature));
+                memberName = memberNames;
+                if(typeInfoAtPosition.callSignature.declAST) {
+                    docComment = TypeScript.Comment.getDocCommentText(typeInfoAtPosition.callSignature.declAST.getDocComments());
+                    if(typeInfoAtPosition.callSignature.declAST.type.symbol.name != "_anonymous") {
+                        symbol = typeInfoAtPosition.callSignature.declAST.type.symbol;
+                    }
+                } else {
+                    docComment = "";
+                }
+                kind = this.getSymbolElementKind(symbol, scopeSymbol, false);
+                if(kind == ScriptElementKind.interfaceElement || kind == ScriptElementKind.classElement) {
+                    kind = typeInfoAtPosition.isNew ? ScriptElementKind.constructorImplementationElement : ScriptElementKind.functionElement;
+                }
+            } else {
+                memberName = type.getScopedTypeNameEx(scopeSymbol, true);
+                docComment = this.getDocCommentOfSymbol(symbol);
+                kind = this.getSymbolElementKind(symbol, scopeSymbol, true);
+            }
+            symbolName = symbol ? this.getFullNameOfSymbol(symbol, enclosingScopeContext) : "";
+            return new TypeInfo(memberName, docComment, symbolName, kind, typeInfoAtPosition.ast.minChar, typeInfoAtPosition.ast.limChar);
+        };
         LanguageService.prototype.getTypeAtPosition = function (fileName, pos) {
             this.refresh();
             var script = this.compilerState.getScriptAST(fileName);
             var sourceText = this.compilerState.getSourceText(script);
-            var path = this.getAstPathToPosition(script, pos);
-            if(path.count() == 0) {
-                return null;
-            }
-            if(path.nodeType() === TypeScript.NodeType.Comment) {
-                this.logger.log("The specified location is inside a comment");
-                return null;
-            }
-            var typeInfo = this.getTypeInfoAtPosition(pos, script);
+            var typeInfo = this.getTypeInfoAtPosition(pos, script, true);
             if(typeInfo == null) {
                 this.logger.log("No type found at the specified location.");
                 return null;
@@ -449,18 +490,24 @@ var Services;
                 this.logger.log("No context found at the specified location.");
                 return null;
             }
-            var memberName = typeInfo.type.getScopedTypeNameEx(enclosingScopeContext.getScope());
-            return new TypeInfo(memberName, TypeScript.Comment.getDocCommentText(typeInfo.type.getDocComments()), typeInfo.ast.minChar, typeInfo.ast.limChar);
+            if(typeInfo.symbol) {
+                return this.getTypeInfo(typeInfo.symbol.getType(), typeInfo.symbol, typeInfo, enclosingScopeContext);
+            } else if(typeInfo.ast.type) {
+                return this.getTypeInfo(typeInfo.ast.type, typeInfo.ast.type.symbol, typeInfo, enclosingScopeContext);
+            } else {
+                this.logger.log("No type found at the specified location.");
+                return null;
+            }
         };
         LanguageService.prototype.getNameOrDottedNameSpan = function (fileName, startPos, endPos) {
             this.refresh();
             var script = this.compilerState.getScriptAST(fileName);
-            var spanInfo = this.getNameOrDottedNameSpanFromPosition(startPos, script);
-            if(spanInfo == null) {
+            var typeAndSpanInfo = this.getTypeInfoAtPosition(startPos, script);
+            if(typeAndSpanInfo == null) {
                 this.logger.log("No name or dotted name found at the specified location.");
                 return null;
             }
-            return spanInfo;
+            return typeAndSpanInfo.spanInfo;
         };
         LanguageService.prototype.getBreakpointInStatement = function (pos, astSpan, verifyASTPos, existingResult, forceFirstStatement, isAst) {
             if(existingResult || !astSpan || (verifyASTPos && pos > astSpan.limChar)) {
@@ -698,7 +745,7 @@ var Services;
                     break;
                 }
                 if(pos > path.ast().minChar) {
-                    if(path.isBodyOfBlock() || path.isBodyOfCase() || path.isBodyOfCatch() || path.isBodyOfDefaultCase() || path.isBodyOfDoWhile() || path.isBodyOfClass() || path.isBodyOfFinally() || path.isBodyOfFor() || path.isBodyOfForIn() || path.isBodyOfFunction() || path.isBodyOfInterface() || path.isBodyOfModule() || path.isBodyOfObjectLit() || path.isBodyOfScript() || path.isBodyOfSwitch() || path.isBodyOfTry() || path.isBodyOfWhile() || path.isBodyOfWith()) {
+                    if(path.ast().nodeType !== TypeScript.NodeType.Error && path.ast().nodeType !== TypeScript.NodeType.List) {
                         break;
                     }
                 }
@@ -868,11 +915,87 @@ var Services;
             var manager = new Services.BraceMatchingManager(syntaxAST);
             return manager.getBraceMatchingAtPosition(position);
         };
-        LanguageService.prototype.getSymbolElementKind = function (sym) {
+        LanguageService.prototype.getFullNameOfSymbol = function (symbol, enclosingScopeContext) {
+            if(symbol && symbol.container && symbol.container.declAST && symbol.container.declAST.nodeType == TypeScript.NodeType.FuncDecl) {
+                var funcDecl = symbol.container.declAST;
+                if(funcDecl.symbols.lookup(symbol.name) == symbol) {
+                    return symbol.getPrettyName(enclosingScopeContext.getScope().container);
+                }
+            }
+            if(symbol && symbol.kind() == TypeScript.SymbolKind.Type) {
+                var typeSymbol = symbol;
+                if(typeSymbol.type && typeSymbol.type.symbol == symbol && typeSymbol.type.primitiveTypeClass != TypeScript.Primitive.None) {
+                    return "";
+                }
+            }
+            return symbol.fullName(enclosingScopeContext.getScope());
+        };
+        LanguageService.prototype.getSymbolElementKind = function (sym, scopeSymbol, useConstructorAsClass) {
+            if(!sym) {
+                return ScriptElementKind.unknown;
+            }
             if(sym.declAST == null) {
                 return ScriptElementKind.keyword;
             }
-            return this.getDeclNodeElementKind(sym.declAST);
+            var isLocal = function () {
+                if(sym.container && sym.container.declAST && sym.container.declAST.nodeType == TypeScript.NodeType.FuncDecl) {
+                    if(scopeSymbol && scopeSymbol.container == sym.container) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            var ast = sym.declAST;
+            switch(ast.nodeType) {
+                case TypeScript.NodeType.InterfaceDeclaration:
+                    return ScriptElementKind.interfaceElement;
+                case TypeScript.NodeType.ClassDeclaration:
+                    return ScriptElementKind.classElement;
+                case TypeScript.NodeType.ModuleDeclaration:
+                    var moduleDecl = ast;
+                    var isEnum = moduleDecl.isEnum();
+                    return isEnum ? ScriptElementKind.enumElement : ScriptElementKind.moduleElement;
+                case TypeScript.NodeType.ImportDeclaration:
+                    return ScriptElementKind.moduleElement;
+                case TypeScript.NodeType.VarDecl:
+                    var varDecl = ast;
+                    if(varDecl.isProperty()) {
+                        return ScriptElementKind.memberVariableElement;
+                    }
+                    return isLocal() ? ScriptElementKind.localVariableElement : ScriptElementKind.variableElement;
+                case TypeScript.NodeType.ArgDecl:
+                    var argDecl = ast;
+                    if(sym.kind() == TypeScript.SymbolKind.Parameter) {
+                        return ScriptElementKind.parameterElement;
+                    }
+                    return (argDecl.isProperty() ? ScriptElementKind.memberVariableElement : ScriptElementKind.variableElement);
+                case TypeScript.NodeType.FuncDecl:
+                    var funcDecl = ast;
+                    if(funcDecl.isGetAccessor()) {
+                        return ScriptElementKind.memberGetAccessorElement;
+                    } else if(funcDecl.isSetAccessor()) {
+                        return ScriptElementKind.memberSetAccessorElement;
+                    } else if(funcDecl.isCallMember()) {
+                        return ScriptElementKind.callSignatureElement;
+                    } else if(funcDecl.isIndexerMember()) {
+                        return ScriptElementKind.indexSignatureElement;
+                    } else if(funcDecl.isConstructMember()) {
+                        return ScriptElementKind.constructSignatureElement;
+                    } else if(funcDecl.isConstructor) {
+                        return useConstructorAsClass ? ScriptElementKind.classElement : ScriptElementKind.constructorImplementationElement;
+                    } else if(funcDecl.isMethod()) {
+                        return ScriptElementKind.memberFunctionElement;
+                    } else if(isLocal()) {
+                        return ScriptElementKind.localFunctionElement;
+                    } else {
+                        return ScriptElementKind.functionElement;
+                    }
+                default:
+                    if(this.logger.warning()) {
+                        this.logger.log("Warning: unrecognized AST node type: " + (TypeScript.NodeType)._map[ast.nodeType]);
+                    }
+                    return ScriptElementKind.unknown;
+            }
         };
         LanguageService.prototype.getSymbolElementKindModifiers = function (sym) {
             if(sym.declAST == null) {
@@ -1066,29 +1189,38 @@ var Services;
             this.getCompletionsFromEnclosingScopeContext(enclosingScopeContext, result);
             return result;
         };
+        LanguageService.prototype.getDocCommentOfSymbol = function (symbol) {
+            if(!symbol) {
+                return "";
+            }
+            var type = symbol.getType();
+            if(type && type.isClass() && type.symbol.name == symbol.name) {
+                return TypeScript.Comment.getDocCommentText(type.getDocComments());
+            }
+            if(symbol.declAST && symbol.declAST.nodeType == TypeScript.NodeType.FuncDecl && type.call && type.call.signatures.length > 1) {
+                return TypeScript.Comment.getDocCommentFirstOverloadSignature(type.call);
+            }
+            if(symbol.kind() == TypeScript.SymbolKind.Parameter) {
+                return (symbol).getParameterDocComments();
+            }
+            if(symbol.declAST && symbol.declAST.nodeType == TypeScript.NodeType.ArgDecl && (symbol.declAST).isProperty()) {
+                return ((symbol.declAST).sym).getParameterDocComments();
+            }
+            return TypeScript.Comment.getDocCommentText(symbol.getDocComments());
+        };
         LanguageService.prototype.getCompletionsFromEnclosingScopeContext = function (enclosingScopeContext, result) {
             var _this = this;
             var getCompletions = function (isMemberCompletion) {
                 result.isMemberCompletion = isMemberCompletion;
                 enclosingScopeContext.isMemberCompletion = isMemberCompletion;
-                var entries = _this.compilerState.getScopeEntries(enclosingScopeContext);
+                var entries = _this.compilerState.getScopeEntries(enclosingScopeContext, true);
                 entries.forEach(function (x) {
                     var entry = new CompletionEntry();
                     entry.name = x.name;
                     entry.type = x.type;
-                    entry.kind = _this.getSymbolElementKind(x.sym);
-                    var type = x.sym.getType();
-                    if(type && type.isClass() && type.symbol.name == x.name) {
-                        entry.docComment = TypeScript.Comment.getDocCommentText(type.getDocComments());
-                    } else if(x.sym.declAST && x.sym.declAST.nodeType == TypeScript.NodeType.FuncDecl && type.call && type.call.signatures.length > 1) {
-                        entry.docComment = TypeScript.Comment.getDocCommentTextOfSignatures(type.call.signatures);
-                    } else {
-                        if(x.sym.kind() == TypeScript.SymbolKind.Parameter) {
-                            entry.docComment = (x.sym).getParameterDocComments();
-                        } else {
-                            entry.docComment = TypeScript.Comment.getDocCommentText(x.sym.getDocComments());
-                        }
-                    }
+                    entry.kind = _this.getSymbolElementKind(x.sym, enclosingScopeContext.getScope(), true);
+                    entry.fullSymbolName = _this.getFullNameOfSymbol(x.sym, enclosingScopeContext);
+                    entry.docComment = _this.getDocCommentOfSymbol(x.sym);
                     entry.kindModifiers = _this.getSymbolElementKindModifiers(x.sym);
                     result.entries.push(entry);
                 });
@@ -1220,7 +1352,7 @@ var Services;
                 }
                 return false;
             };
-            if(path.isNameOfVariable() || path.isNameOfFunction() || path.isNameOfArgument() || path.isNameOfInterface() || path.isNameOfClass() || path.isNameOfModule()) {
+            if(path.isNameOfVariable() || path.isNameOfFunction() || path.isNameOfArgument() || path.isArgumentListOfFunction() || path.isNameOfInterface() || path.isNameOfClass() || path.isNameOfModule()) {
                 return false;
             }
             if(isNodeType(TypeScript.NodeType.Member) || isNodeType(TypeScript.NodeType.TryCatch) || isNodeType(TypeScript.NodeType.Catch) || isNodeType(TypeScript.NodeType.Comment) || isNodeType(TypeScript.NodeType.Regex) || isNodeType(TypeScript.NodeType.QString)) {
@@ -1422,57 +1554,80 @@ var Services;
             this.refresh();
             return this.compilerState.getEmitOutput(fileName);
         };
-        LanguageService.prototype.getTypeInfoAtPosition = function (pos, script) {
+        LanguageService.prototype.getTypeInfoAtPosition = function (pos, script, constructorIsValid) {
             var result = null;
-            var resultASTs = [];
+            var callExpr = [];
+            var createTypeInfoAtPosition = function (minChar, limChar, ast, type, forceNew) {
+                var typeInfoAtPosition = {
+                    spanInfo: new SpanInfo(minChar, limChar),
+                    ast: ast
+                };
+                if(callExpr.length > 0) {
+                    var curCallExpr = callExpr[callExpr.length - 1];
+                    if(curCallExpr.target.type == type) {
+                        typeInfoAtPosition.callSignature = curCallExpr.signature;
+                        typeInfoAtPosition.isNew = forceNew || curCallExpr.nodeType == TypeScript.NodeType.New;
+                    }
+                }
+                return typeInfoAtPosition;
+            };
             var pre = function (cur, parent) {
                 if(TypeScript.isValidAstNode(cur)) {
                     if(pos >= cur.minChar && pos < cur.limChar) {
-                        var previous = resultASTs[resultASTs.length - 1];
-                        if(previous == undefined || (cur.minChar >= previous.minChar && cur.limChar <= previous.limChar)) {
-                            resultASTs.push(cur);
-                            if((cur).sym != null && (cur).sym.getType() != null) {
-                                result = {
-                                    ast: cur,
-                                    type: (cur).sym.getType()
-                                };
-                            } else if(cur.type != null) {
-                                result = {
-                                    ast: cur,
-                                    type: cur.type
-                                };
-                            }
+                        switch(cur.nodeType) {
+                            case TypeScript.NodeType.Call:
+                            case TypeScript.NodeType.New:
+                                var curCallExpr = cur;
+                                if(pos >= curCallExpr.target.minChar && pos < curCallExpr.target.limChar) {
+                                    callExpr.push(curCallExpr);
+                                }
+                                break;
+                            case TypeScript.NodeType.Dot:
+                                if(result == null) {
+                                    result = createTypeInfoAtPosition(cur.minChar, cur.limChar, cur, cur.type);
+                                }
+                                break;
+                            case TypeScript.NodeType.Name:
+                                result = createTypeInfoAtPosition(result == null ? cur.minChar : result.spanInfo.minChar, cur.limChar, cur, (cur).sym ? (cur).sym.getType() : cur.type);
+                                result.symbol = (cur).sym;
+                                break;
+                            case TypeScript.NodeType.FuncDecl:
+                                var funcDecl = cur;
+                                if(constructorIsValid && funcDecl.constructorSpan && pos >= funcDecl.constructorSpan.minChar && pos < funcDecl.constructorSpan.limChar) {
+                                    result = {
+                                        spanInfo: new SpanInfo(funcDecl.constructorSpan.minChar, funcDecl.constructorSpan.limChar),
+                                        ast: cur,
+                                        callSignature: funcDecl.signature,
+                                        isNew: true
+                                    };
+                                }
+                                break;
+                            case TypeScript.NodeType.Super:
+                                result = createTypeInfoAtPosition(cur.minChar, cur.limChar, cur, cur.type, true);
+                                result.symbol = cur.type.symbol;
+                                break;
+                            case TypeScript.NodeType.QString:
+                            case TypeScript.NodeType.This:
+                                result = createTypeInfoAtPosition(cur.minChar, cur.limChar, cur, cur.type);
+                                break;
+                        }
+                    } else if(result && callExpr.length > 0) {
+                        var curCallExpr = callExpr[callExpr.length - 1];
+                        if(curCallExpr.target.minChar >= cur.minChar && curCallExpr.target.minChar < cur.limChar) {
+                            result.callSignature = null;
                         }
                     }
                 }
                 return cur;
             };
-            TypeScript.getAstWalkerFactory().walk(script, pre);
-            return result;
-        };
-        LanguageService.prototype.getNameOrDottedNameSpanFromPosition = function (pos, script) {
-            var result = null;
-            var pre = function (cur, parent) {
-                if(TypeScript.isValidAstNode(cur)) {
-                    if(pos >= cur.minChar && pos < cur.limChar) {
-                        if(cur.nodeType == TypeScript.NodeType.Dot) {
-                            if(result == null) {
-                                result = new SpanInfo(cur.minChar, cur.limChar);
-                            }
-                        } else if(cur.nodeType == TypeScript.NodeType.Name) {
-                            if(result == null) {
-                                result = new SpanInfo(cur.minChar, cur.limChar);
-                            } else {
-                                result.limChar = cur.limChar;
-                            }
-                        } else if(cur.nodeType == TypeScript.NodeType.QString || cur.nodeType == TypeScript.NodeType.This || cur.nodeType == TypeScript.NodeType.Super) {
-                            result = new SpanInfo(cur.minChar, cur.limChar);
-                        }
-                    }
+            var post = function (cur, parent) {
+                var callExprLength = callExpr.length;
+                if(callExprLength > 0 && callExpr[callExprLength - 1] == parent) {
+                    callExpr.pop();
                 }
                 return cur;
             };
-            TypeScript.getAstWalkerFactory().walk(script, pre);
+            TypeScript.getAstWalkerFactory().walk(script, pre, post);
             return result;
         };
         LanguageService.prototype.getReferencesToField = function (context, symbolSet, match) {
@@ -1523,48 +1678,6 @@ var Services;
             };
             for(var i = 0, len = context.scope.length; i < len; i++) {
                 processScript(context.scope[i]);
-            }
-        };
-        LanguageService.prototype.getDeclNodeElementKind = function (ast) {
-            switch(ast.nodeType) {
-                case TypeScript.NodeType.InterfaceDeclaration:
-                    return ScriptElementKind.interfaceElement;
-                case TypeScript.NodeType.ClassDeclaration:
-                    return ScriptElementKind.classElement;
-                case TypeScript.NodeType.ModuleDeclaration:
-                    var moduleDecl = ast;
-                    var isEnum = moduleDecl.isEnum();
-                    return isEnum ? ScriptElementKind.enumElement : ScriptElementKind.moduleElement;
-                case TypeScript.NodeType.VarDecl:
-                    var varDecl = ast;
-                    return (varDecl.isProperty() ? ScriptElementKind.memberVariableElement : ScriptElementKind.variableElement);
-                case TypeScript.NodeType.ArgDecl:
-                    var argDecl = ast;
-                    return (argDecl.isProperty() ? ScriptElementKind.memberVariableElement : ScriptElementKind.variableElement);
-                case TypeScript.NodeType.FuncDecl:
-                    var funcDecl = ast;
-                    if(funcDecl.isGetAccessor()) {
-                        return ScriptElementKind.memberGetAccessorElement;
-                    } else if(funcDecl.isSetAccessor()) {
-                        return ScriptElementKind.memberSetAccessorElement;
-                    } else if(funcDecl.isCallMember()) {
-                        return ScriptElementKind.callSignatureElement;
-                    } else if(funcDecl.isIndexerMember()) {
-                        return ScriptElementKind.indexSignatureElement;
-                    } else if(funcDecl.isConstructMember()) {
-                        return ScriptElementKind.constructSignatureElement;
-                    } else if(funcDecl.isConstructor) {
-                        return ScriptElementKind.constructorImplementationElement;
-                    } else if(funcDecl.isMethod()) {
-                        return ScriptElementKind.memberFunctionElement;
-                    } else {
-                        return ScriptElementKind.functionElement;
-                    }
-                default:
-                    if(this.logger.warning()) {
-                        this.logger.log("Warning: unrecognized AST node type: " + (TypeScript.NodeType)._map[ast.nodeType]);
-                    }
-                    return ScriptElementKind.unknown;
             }
         };
         LanguageService.prototype.getDeclNodeElementKindModifiers = function (ast) {

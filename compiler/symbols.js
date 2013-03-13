@@ -141,11 +141,17 @@ var TypeScript;
             builder += this.getPrettyName(len == 0 ? scope.container : lca[0]) + this.getOptionalNameString();
             return builder;
         };
-        Symbol.prototype.fullName = function () {
-            var builder = this.name;
+        Symbol.prototype.fullName = function (scope) {
+            var scopeSymbol = !scope ? null : scope.container;
+            var scopeRootPath = !scopeSymbol ? [] : scopeSymbol.pathToRoot();
+            var dynamicModuleRoot = null;
+            if(scopeRootPath.length > 0 && scopeRootPath[scopeRootPath.length - 1].declAST && scopeRootPath[scopeRootPath.length - 1].declAST.nodeType == TypeScript.NodeType.ModuleDeclaration && (scopeRootPath[scopeRootPath.length - 1].declAST).isWholeFile()) {
+                dynamicModuleRoot = scopeRootPath[scopeRootPath.length - 1];
+            }
+            var builder = this.getPrettyName(scopeSymbol);
             var ancestor = this.container;
-            while(ancestor && (ancestor.name != TypeScript.globalId)) {
-                builder = ancestor.name + "." + builder;
+            while(ancestor && (ancestor.name != TypeScript.globalId) && ancestor != dynamicModuleRoot) {
+                builder = ancestor.getPrettyName(scopeSymbol) + "." + builder;
                 ancestor = ancestor.container;
             }
             return builder;
@@ -430,7 +436,7 @@ var TypeScript;
             return this.field.typeLink.type;
         };
         FieldSymbol.prototype.getTypeNameEx = function (scope) {
-            return TypeScript.MemberName.create(this.field.typeLink.type.getScopedTypeNameEx(scope), this.name + this.getOptionalNameString() + ": ", "");
+            return TypeScript.MemberName.create(this.field.typeLink.type ? this.field.typeLink.type.getScopedTypeNameEx(scope) : TypeScript.MemberName.create("any"), this.name + this.getOptionalNameString() + ": ", "");
         };
         FieldSymbol.prototype.isMember = function () {
             return true;
@@ -548,6 +554,9 @@ var TypeScript;
                 this.paramDocComment = parameterComments.join("\n");
             }
             return this.paramDocComment;
+        };
+        ParameterSymbol.prototype.fullName = function () {
+            return this.name;
         };
         return ParameterSymbol;
     })(InferenceSymbol);

@@ -36,8 +36,6 @@
 
 (defvar ac-typescript/debug-mode nil)
 (defvar ac-typescript/timer-handle nil)
-(defvar ac-typescript/modify-position-store nil)
-(defvar ac-typescript/buffer-modified-tick 0)
 
 (defface ac-typescript/candidate-face
   '((t (:background "lightgray" :foreground "navy")))
@@ -103,6 +101,7 @@
               (ac-typescript/inner-candidate-callback result)))))))
 
 (defun ac-typescript/prefix ()
+  "Define prefix is given timing when fire ac-complete"
   (or (ac-prefix-symbol)
       (let ((c (char-before)))
         (when (or (eq ?\. c))
@@ -129,10 +128,10 @@
       ))
   )
 
-(defun ac-typescript/update (&rest target-buffer)
+(defun ac-typescript/update (target-buffer)
   "Register current buffer file to completion server."
   (interactive)
-  (when (eq major-mode 'typescript-mode)
+  (with-current-buffer target-buffer
     (let* ((buffer (if target-buffer target-buffer (current-buffer)))
            (buffer-filename (buffer-file-name buffer))
            (contents (buffer-substring-no-properties (point-min) (point-max)))
@@ -142,7 +141,7 @@
         (with-temp-file filename
           (insert contents)
           )
-        (ac-typescript-client/update-file buffer-filename filename)
+        (ac-typescript-client/update-file buffer-filename contents)
         ))
     ))
 
@@ -164,10 +163,17 @@
           (buffer-list))
   )
 
-(defun ac-typescript/edit-script (buffer prev next text)
+(defun ac-typescript/update-range (begin end old-text-length)
   "Update registered script with previous and current point what edit on the buffer"
-  (ac-typescript-client/update-buffer-region buffer prev next text)
-  )
+  (when (ac-typescript/typescriptp (current-buffer))
+    (let ((contents (buffer-substring-no-properties begin end)))
+      (if (= begin end)
+          ;; if remove some text
+          (ac-typescript-client/update-buffer-region
+           (current-buffer) begin (+ end old-text-length) "")
+        (ac-typescript-client/update-buffer-region
+         (current-buffer) begin (- end (length contents)) contents))
+      )))
 
 (defun ac-typescript/ac-enable ()
   "Enable auto-complete and setting to use ac-typescript."
@@ -175,39 +181,9 @@
   (setq ac-sources (append '(ac-source-typescript) ac-sources))
   (auto-complete-mode 1)
 
-  ;; install current buffer registration to save-buffer-hook
-  (if ac-typescript/auto-register
-      (setq ac-typescript/timer-handle
-            (run-with-idle-timer ac-typescript/auto-register-interval t
-                                 'ac-typescript/auto-update-each-buffer)))
   (add-hook 'after-save-hook 'ac-typescript/register)
-
-  (defadvice ac-handle-pre-command (before ac-typescript/save-current-position () activate)
-    (when (ac-typescript/typescriptp (current-buffer))
-      (setq ac-typescript/modify-position-store (point))
-      (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))))
-
-  (defadvice ac-handle-post-command (before ac-typescript/update-script-with-modified () activate)
-    (when (and (ac-typescript/typescriptp (current-buffer))
-               ac-typescript/modify-position-store
-               (not (equal ac-typescript/buffer-modified-tick
-                                        (buffer-modified-tick (current-buffer))))
-               )
-      (let* ((current (point))
-             (previous ac-typescript/modify-position-store)
-             (text (if (and (not (equal ac-typescript/buffer-modified-tick
-                                        (buffer-modified-tick (current-buffer))))
-                            (> current previous))
-                       (buffer-substring-no-properties previous current)
-                     "")))
-        (setq ac-typescript/buffer-modified-tick (buffer-modified-tick (current-buffer)))
-        (ac-typescript/edit-script (current-buffer) previous
-                                   current text))
-      )
-    )
-
-  (ad-enable-advice 'ac-handle-pre-command 'before 'ac-typescript/save-current-position)
-  (ad-enable-advice 'ac-handle-post-command 'before 'ac-typescript/update-script-with-modified)
+  (make-local-variable 'after-change-functions)
+  (add-to-list 'after-change-functions 'ac-typescript/update-range)
 
   (when (and ac-typescript/auto-register
              (ac-typescript-server/server-running-p))

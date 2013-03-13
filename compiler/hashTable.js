@@ -137,7 +137,7 @@ var TypeScript;
     })();
     TypeScript.DualStringHashTable = DualStringHashTable;    
     function numberHashFn(key) {
-        var c2 = 668265261;
+        var c2 = 0x27d4eb2d;
         key = (key ^ 61) ^ (key >>> 16);
         key = key + (key << 3);
         key = key ^ (key >>> 4);

@@ -4,8 +4,12 @@ var TypeScript;
         return str.replace("\"", "").replace("'", "").replace("'", "").replace("\"", "");
     }
     TypeScript.stripQuotes = stripQuotes;
+    function isSingleQuoted(str) {
+        return str.indexOf("'") != -1;
+    }
+    TypeScript.isSingleQuoted = isSingleQuoted;
     function isQuoted(str) {
-        return str.indexOf("\"") != -1 || str.indexOf("'") != -1 || str.indexOf("'") != -1 || str.indexOf("\"") != -1;
+        return str.indexOf("\"") != -1 || isSingleQuoted(str);
     }
     TypeScript.isQuoted = isQuoted;
     function quoteStr(str) {
@@ -23,6 +27,14 @@ var TypeScript;
         return str;
     }
     TypeScript.swapQuotes = swapQuotes;
+    function changeToSingleQuote(str) {
+        if(str.indexOf("\"") != -1) {
+            str = str.replace("\"", "'");
+            str = str.replace("\"", "'");
+        }
+        return str;
+    }
+    TypeScript.changeToSingleQuote = changeToSingleQuote;
     function switchToForwardSlashes(path) {
         return path.replace(/\\/g, "/");
     }

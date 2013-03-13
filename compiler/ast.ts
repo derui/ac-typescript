@@ -768,11 +768,9 @@ module TypeScript {
     }
 
     export class NumberLiteral extends Expression {
-        constructor (public value: number, public hasEmptyFraction?: bool) {
+        constructor (public value: number, public text: string) {
             super(NodeType.NumberLit);
         }
-
-        public isNegativeZero = false;
 
         public typeCheck(typeFlow: TypeFlow) {
             this.type = typeFlow.doubleType;
@@ -786,34 +784,18 @@ module TypeScript {
         public emit(emitter: Emitter, tokenId: TokenID, startLine: bool) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            if (this.isNegativeZero) {
-                emitter.writeToOutput("-");
-            }
-
-            emitter.writeToOutput(this.value.toString());
-
-            if (this.hasEmptyFraction)
-                emitter.writeToOutput(".0");
-
+            emitter.writeToOutput(this.text);
             emitter.recordSourceMappingEnd(this);
             emitter.emitParensAndCommentsInPlace(this, false);
         }
 
-        public printLabel() {
-            if (Math.floor(this.value) != this.value) {
-                return this.value.toFixed(2).toString();
-            }
-            else if (this.hasEmptyFraction) {
-                return this.value.toString() + ".0";
-            }
-            else {
-                return this.value.toString();
-            }
+        public printLabel(): string {
+            return this.text;
         }
     }
 
     export class RegexLiteral extends Expression {
-        constructor (public regex) {
+        constructor (public text: string) {
             super(NodeType.Regex);
         }
         
@@ -825,7 +807,7 @@ module TypeScript {
         public emit(emitter: Emitter, tokenId: TokenID, startLine: bool) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            emitter.writeToOutput(this.regex.toString());
+            emitter.writeToOutput(this.text);
             emitter.recordSourceMappingEnd(this);
             emitter.emitParensAndCommentsInPlace(this, false);
         }
@@ -1013,7 +995,6 @@ module TypeScript {
         public boundToProperty: VarDecl = null;
         public isOverload = false;
         public innerStaticFuncs: FuncDecl[] = [];
-        public isTargetTypedAsMethod = false;
         public isInlineCallLiteral = false;
         public accessorSymbol: Symbol = null;
         public leftCurlyCount = 0;
@@ -1022,6 +1003,7 @@ module TypeScript {
         public scopeType: Type = null; // Type of the FuncDecl, before target typing
         public endingToken: ASTSpan = null;
         public isDeclaration() { return true; }
+        public constructorSpan: ASTSpan = null;
 
         constructor (public name: Identifier, public bod: ASTList, public isConstructor: bool,
                      public arguments: ASTList, public vars: ASTList, public scopes: ASTList, public statics: ASTList,
@@ -1161,7 +1143,6 @@ module TypeScript {
         public leftCurlyCount = 0;
         public rightCurlyCount = 0;
         public vars: ASTList;
-        public scopes: ASTList;
         // Remember if the script contains Unicode chars, that is needed when generating code for this script object to decide the output file correct encoding.
         public containsUnicodeChar = false;
         public containsUnicodeCharInComment = false;
@@ -1175,7 +1156,6 @@ module TypeScript {
         constructor (vars: ASTList, scopes: ASTList) {
             super(new Identifier("script"), null, false, null, vars, scopes, null, NodeType.Script);
             this.vars = vars;
-            this.scopes = scopes;
         }
 
         public typeCheck(typeFlow: TypeFlow) {
@@ -1234,13 +1214,11 @@ module TypeScript {
 
         public emit(emitter: Emitter, tokenId: TokenID, startLine: bool) {
             if (this.emitRequired(emitter.emitOptions)) {
-                emitter.emitParensAndCommentsInPlace(this.bod, true);
                 emitter.emitJavascriptList(this.bod, null, TokenID.Semicolon, true, false, false, true, this.requiresExtendsBlock);
-                emitter.emitParensAndCommentsInPlace(this.bod, false);
             }
         }
 
-        private externallyVisibleImportedSymbols: Symbol[] = [];
+        public externallyVisibleImportedSymbols: Symbol[] = [];
 
         public AddExternallyVisibleImportedSymbol(symbol: Symbol, checker: TypeChecker) {
             if (this.isExternallyVisibleSymbol(symbol)) {
@@ -1288,22 +1266,21 @@ module TypeScript {
         public prettyName: string;
         public amdDependencies: string[] = [];
         public vars: ASTList;
-        public scopes: ASTList;
         // Remember if the module contains Unicode chars, that is needed for dynamic module as we will generate a file for each.
         public containsUnicodeChar = false;
         public containsUnicodeCharInComment = false;
 
-        constructor (name: Identifier, members: ASTList, vars: ASTList, scopes: ASTList, public endingToken: ASTSpan) {
+        constructor (name: Identifier, members: ASTList, vars: ASTList, public endingToken: ASTSpan) {
             super(NodeType.ModuleDeclaration, name, members);
 
             this.vars = vars;
-            this.scopes = scopes;
             this.prettyName = this.name.actualText;
         }
 
         public isExported() { return hasFlag(this.modFlags, ModuleFlags.Exported); }
         public isAmbient() { return hasFlag(this.modFlags, ModuleFlags.Ambient); }
         public isEnum() { return hasFlag(this.modFlags, ModuleFlags.IsEnum); }
+        public isWholeFile() { return hasFlag(this.modFlags, ModuleFlags.IsWholeFile); }
 
         public recordNonInterface() {
             this.modFlags &= ~ModuleFlags.ShouldEmitModuleDecl;
@@ -2108,6 +2085,7 @@ module TypeScript {
     export class CaseStatement extends Statement {
         public expr: AST = null;
         public body: ASTList;
+        public colonSpan: ASTSpan = new ASTSpan();
 
         constructor () {
             super(NodeType.Case);
@@ -2123,7 +2101,9 @@ module TypeScript {
             else {
                 emitter.writeToOutput("default");
             }
+            emitter.recordSourceMappingStart(this.colonSpan);
             emitter.writeToOutput(":");
+            emitter.recordSourceMappingEnd(this.colonSpan);
             if (this.body.members.length == 1 && this.body.members[0].nodeType == NodeType.Block) {
                 // The case statement was written with curly braces, so emit it with the appropriate formatting
                 emitter.emitJavascriptStatements(this.body, false);
@@ -2461,7 +2441,7 @@ module TypeScript {
 
         public isDocComment() {
             if (this.isBlockComment) {
-                return this.content.charAt(2) == "*";
+                return this.content.charAt(2) == "*" && this.content.charAt(3) != "/";
             }
 
             return false;
@@ -2708,16 +2688,17 @@ module TypeScript {
             return "";
         }
 
-        static getDocCommentTextOfSignatures(signatures: Signature[]) {
-            var comments: string[] = [];
-            for (var i = 0; i < signatures.length; i++) {
-                var signatureDocComment = TypeScript.Comment.getDocCommentText(signatures[i].declAST.getDocComments());
-                if (signatureDocComment != "") {
-                    comments.push(signatureDocComment);
+        static getDocCommentFirstOverloadSignature(signatureGroup: SignatureGroup) {
+            for (var i = 0; i < signatureGroup.signatures.length; i++) {
+                var signature = signatureGroup.signatures[i];
+                if (signature == signatureGroup.definitionSignature) {
+                    continue;
                 }
+
+                return TypeScript.Comment.getDocCommentText(signature.declAST.getDocComments());
             }
 
-            return comments.join("\n");
+            return "";
         }
     }
 
@@ -2729,8 +2710,9 @@ module TypeScript {
         public emit(emitter: Emitter, tokenId: TokenID, startLine: bool) {
             emitter.emitParensAndCommentsInPlace(this, true);
             emitter.recordSourceMappingStart(this);
-            emitter.writeLineToOutput("debugger;");
+            emitter.writeToOutput("debugger");
             emitter.recordSourceMappingEnd(this);
+            emitter.writeLineToOutput(";");
             emitter.emitParensAndCommentsInPlace(this, false);
         }
     }

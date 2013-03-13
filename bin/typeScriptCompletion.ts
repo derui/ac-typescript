@@ -83,7 +83,7 @@ export class TypeScriptLS implements Services.ILanguageServiceShimHost {
     public addFile(name: string, isResident = false) {
         fs.readFile(name, 'utf8', (err, data:string) => {
             if (err) throw err;
-            this.addScript(name, data, isResident);
+            this.updateScript(name, data, isResident);
         });
     }
 

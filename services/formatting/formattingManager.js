@@ -63,13 +63,18 @@ var Formatting;
             return [];
         };
         FormattingManager.prototype.FormatOnEnter = function (caretPosition) {
+            var _this = this;
             var lineNumber = this.snapshot.GetLineNumberFromPosition(caretPosition);
             if(lineNumber > 0) {
                 var prevLine = this.snapshot.GetLineFromLineNumber(lineNumber - 1);
                 var currentLine = this.snapshot.GetLineFromLineNumber(lineNumber);
                 var span = new Formatting.SnapshotSpan(this.snapshot, Formatting.Span.FromBounds(prevLine.startPosition(), currentLine.endPosition()));
                 if(span != null) {
-                    return this.Format(span, Formatting.FormattingRequestKind.FormatOnEnter, null);
+                    var caret = new Formatting.SnapshotPoint(this.snapshot, caretPosition);
+                    var mappedPoint = this.MapDownSnapshotPoint(caret);
+                    return this.Format(span, Formatting.FormattingRequestKind.FormatOnEnter, function (tokens, requestKind) {
+                        return !_this.IsInsideStringLiteralOrComment(mappedPoint, tokens);
+                    });
                 }
             }
             return [];

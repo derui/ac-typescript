@@ -352,7 +352,7 @@ module TypeScript {
         public cleanASTTypesForReTypeCheck(ast: AST) {
             function cleanASTType(ast: AST, parent: AST): AST {
                 ast.type = null;
-                if (ast.nodeType == NodeType.VarDecl) {
+				if (ast.nodeType == NodeType.VarDecl) {
                     var vardecl = <VarDecl>ast;
                     vardecl.sym = null;
                 }
@@ -382,6 +382,9 @@ module TypeScript {
                 else if (ast.nodeType == NodeType.Catch) {
                     (<Catch>ast).containedScope = null;
                 }
+				else if (ast.nodeType === NodeType.Script) {
+					(<Script>ast).externallyVisibleImportedSymbols = [];
+				}
                 return ast;
             }
             TypeScript.getAstWalkerFactory().walk(ast, cleanASTType);
@@ -607,7 +610,7 @@ module TypeScript {
             return TypeScriptCompiler.mapToFileNameExtension(".js", fileName, wholeFileNameReplaced);
         }
 
-        public emitUnit(script: Script, reuseEmitter?: bool, emitter?: Emitter) {
+        public emitUnit(script: Script, reuseEmitter?: bool, emitter?: Emitter, inputOutputMapper?: (unitIndex: number, outFile: string) => void) {
             if (!script.emitRequired(this.emitSettings)) {
                 return null;
             }
@@ -618,10 +621,14 @@ module TypeScript {
                 var outFile = this.createFile(outFname, this.useUTF8ForFile(script));
                 emitter = new Emitter(this.typeChecker, outFname, outFile, this.emitSettings, this.errorReporter);
                 if (this.settings.mapSourceFiles) {
-                    emitter.setSourceMappings(new TypeScript.SourceMapper(fname, outFname, outFile, this.createFile(outFname + SourceMapper.MapFileExtension, false), this.errorReporter));
+                    emitter.setSourceMappings(new TypeScript.SourceMapper(fname, outFname, outFile, this.createFile(outFname + SourceMapper.MapFileExtension, false), this.errorReporter, this.settings.emitFullSourceMapPath));
+                }
+                if (inputOutputMapper) {
+                    // Remember the name of the outfile for this source file
+                    inputOutputMapper(script.locationInfo.unitIndex, outFname);
                 }
             } else if (this.settings.mapSourceFiles) {
-                emitter.setSourceMappings(new TypeScript.SourceMapper(fname, emitter.emittingFileName, emitter.outfile, emitter.sourceMapper.sourceMapOut, this.errorReporter));
+                emitter.setSourceMappings(new TypeScript.SourceMapper(fname, emitter.emittingFileName, emitter.outfile, emitter.sourceMapper.sourceMapOut, this.errorReporter, this.settings.emitFullSourceMapPath));
             }
 
             this.typeChecker.locationInfo = script.locationInfo;
@@ -634,14 +641,14 @@ module TypeScript {
             }
         }
 
-        public emit(ioHost: EmitterIOHost) {
+        public emit(ioHost: EmitterIOHost, inputOutputMapper?: (unitIndex: number, outFile: string) => void) {
             this.parseEmitOption(ioHost);
 
             var emitter: Emitter = null;
             for (var i = 0, len = this.scripts.members.length; i < len; i++) {
                 var script = <Script>this.scripts.members[i];
                 if (this.emitSettings.outputMany || emitter == null) {
-                    emitter = this.emitUnit(script, !this.emitSettings.outputMany);
+                    emitter = this.emitUnit(script, !this.emitSettings.outputMany, null, inputOutputMapper);
                 } else {
                     this.emitUnit(script, true, emitter);
                 }
@@ -762,7 +769,7 @@ module TypeScript {
             }
         }
 
-        public getScopeEntries(enclosingScopeContext: EnclosingScopeContext): ScopeEntry[] {
+        public getScopeEntries(enclosingScopeContext: EnclosingScopeContext, getPrettyTypeName?: bool): ScopeEntry[] {
             var scope = this.getScope(enclosingScopeContext);
             if (scope == null) {
                 return [];
@@ -787,13 +794,13 @@ module TypeScript {
             var svModuleDecl = this.compiler.typeChecker.currentModDecl;
             this.compiler.typeChecker.currentModDecl = enclosingScopeContext.deepestModuleDecl;
 
-            var result = this.getTypeNamesForNames(enclosingScopeContext, inScopeNames.getAllKeys(), scope);
+            var result = this.getTypeNamesForNames(enclosingScopeContext, inScopeNames.getAllKeys(), scope, getPrettyTypeName);
 
             this.compiler.typeChecker.currentModDecl = svModuleDecl;
             return result;
         }
 
-        private getTypeNamesForNames(enclosingScopeContext: EnclosingScopeContext, allNames: string[], scope: SymbolScope): ScopeEntry[] {
+        private getTypeNamesForNames(enclosingScopeContext: EnclosingScopeContext, allNames: string[], scope: SymbolScope, getPrettyTypeName? : bool): ScopeEntry[] {
             var result: ScopeEntry[] = [];
 
             var enclosingScope = enclosingScopeContext.getScope();
@@ -815,7 +822,9 @@ module TypeScript {
                 if (symbol) {
                     // Do not add dynamic module names to the list, since they're not legal as identifiers
                     if (displayThisMember && !isQuoted(symbol.name) && !isRelative(symbol.name)) {
-                        var typeName = symbol.getType().getScopedTypeName(enclosingScope);
+                        var getPrettyOverload = getPrettyTypeName && symbol.declAST && symbol.declAST.nodeType == NodeType.FuncDecl;
+                        var type = symbol.getType();
+                        var typeName = type ? type.getScopedTypeName(enclosingScope, getPrettyOverload) : "";
                         result.push(new ScopeEntry(name, typeName, symbol));
                     }
                 }

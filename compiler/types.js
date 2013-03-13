@@ -155,11 +155,11 @@ var TypeScript;
         Type.prototype.getTypeName = function () {
             return this.getMemberTypeName("", true, false, null);
         };
-        Type.prototype.getScopedTypeName = function (scope) {
-            return this.getMemberTypeName("", true, false, scope);
+        Type.prototype.getScopedTypeName = function (scope, getPrettyTypeName) {
+            return this.getMemberTypeName("", true, false, scope, getPrettyTypeName);
         };
-        Type.prototype.getScopedTypeNameEx = function (scope) {
-            return this.getMemberTypeNameEx("", true, false, scope);
+        Type.prototype.getScopedTypeNameEx = function (scope, getPrettyTypeName) {
+            return this.getMemberTypeNameEx("", true, false, scope, getPrettyTypeName);
         };
         Type.prototype.callCount = function () {
             var total = 0;
@@ -174,11 +174,11 @@ var TypeScript;
             }
             return total;
         };
-        Type.prototype.getMemberTypeName = function (prefix, topLevel, isElementType, scope) {
-            var memberName = this.getMemberTypeNameEx(prefix, topLevel, isElementType, scope);
+        Type.prototype.getMemberTypeName = function (prefix, topLevel, isElementType, scope, getPrettyTypeName) {
+            var memberName = this.getMemberTypeNameEx(prefix, topLevel, isElementType, scope, getPrettyTypeName);
             return memberName.toString();
         };
-        Type.prototype.getMemberTypeNameEx = function (prefix, topLevel, isElementType, scope) {
+        Type.prototype.getMemberTypeNameEx = function (prefix, topLevel, isElementType, scope, getPrettyTypeName) {
             if(this.elementType) {
                 return MemberName.create(this.elementType.getMemberTypeNameEx(prefix, false, true, scope), "", "[]");
             } else if(this.symbol && this.symbol.name && this.symbol.name != "_anonymous" && (((this.call == null) && (this.construct == null) && (this.index == null)) || (TypeScript.hasFlag(this.typeFlags, TypeScript.TypeFlags.BuildingName)) || (this.members && (!this.isClass())))) {
@@ -213,9 +213,10 @@ var TypeScript;
                     var signatureCount = this.callCount();
                     var j;
                     var len = 0;
-                    var shortform = !curlies && signatureCount == 1 && topLevel;
+                    var getPrettyFunctionOverload = getPrettyTypeName && !curlies && this.call && this.call.signatures.length > 1 && !this.members && !this.construct;
+                    var shortform = !curlies && (signatureCount == 1 || getPrettyFunctionOverload) && topLevel;
                     if(this.call) {
-                        allMemberNames.addAll(this.call.toStrings(prefix, shortform, scope));
+                        allMemberNames.addAll(this.call.toStrings(prefix, shortform, scope, getPrettyFunctionOverload));
                     }
                     if(this.construct) {
                         allMemberNames.addAll(this.construct.toStrings("new", shortform, scope));
@@ -223,7 +224,7 @@ var TypeScript;
                     if(this.index) {
                         allMemberNames.addAll(this.index.toStrings("", shortform, scope));
                     }
-                    if((curlies) || ((signatureCount > 1) && topLevel)) {
+                    if((curlies) || (!getPrettyFunctionOverload && (signatureCount > 1) && topLevel)) {
                         allMemberNames.prefix = "{ ";
                         allMemberNames.suffix = "}";
                         allMemberNames.delim = delim;

@@ -80,6 +80,7 @@ var opts = new Options().parse(
     [new OptionItem("port", "p"),
      new OptionItem("debug", "d", false, false)]);
 
+var debugging = opts["debug"] || false;
 var port = parseInt(opts['port']) || 8124;
 
 import services = module('typeScriptCompletion')
@@ -89,15 +90,20 @@ var typescriptLS = new services.TypeScriptLS();
 typescriptLS.addDefaultLibrary();
 
 var http = require('http');
-var url = require('url');
-var querystring = require('querystring');
 
 var lsCache = null;
+
+function log(mes) {
+    if (debugging) {
+        console.log(mes);
+    }
+}
 
 function addFile(query) {
     if (query['file']) {
         typescriptLS.addFile(query['file'], true);
-        console.log('add file : ' + query['file']);
+
+        log('add file : ' + query['file']);
         lsCache = typescriptLS.getLanguageService();
     }
 
@@ -120,34 +126,40 @@ function completion(query) {
 
     var isMember = false;
     if (query['member']) {
-        isMember = query['member'] === '1' ? true : false;
+        log("member is " + query['member']);
+        isMember = query['member'] === 1 ? true : false;
     }
 
     var base = query['file'];
     var line = parseInt(query['line']);
     var column = parseInt(query['column']);
-    console.log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column);
+    log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column
+        + 'member : ' + isMember);
 
     if (lsCache == null) {
-         lsCache = typescriptLS.getLanguageService();
+        lsCache = typescriptLS.getLanguageService();
     }
+
     var position = typescriptLS.lineColToPosition(base, line, column);
     return lsCache.languageService.getCompletionsAtPosition(base, position, isMember).entries;
 }
 
-function updateFile(query, post) {
-    console.log('update file : file [' + query['file'] + ']');
-    typescriptLS.updateScript(query['file'], post, true);
+function updateFile(query) {
+    var content = decodeURIComponent(query['content']);
+    log('update file : file [' + query['file'] + '] : length -> ' + content.length);
+
+    typescriptLS.updateScript(query['file'], content, true);
+
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
 
 function updateScript(query) {
-    console.log('update range in file : ' + query['file'] + " : " +
+    log('update range in file : ' + query['file'] + " : " +
                 query['prev'] + ' : ' + query['next'] + ' => ' + query['text']);
 
     typescriptLS.editScript(query['file'], parseInt(query['prev']), parseInt(query['next']),
-                            query['text']);
+                            decodeURIComponent(query['text']));
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
@@ -157,37 +169,31 @@ var methodHandler = {
     'completion' : completion,
     'update-file' : updateFile,
     'update' : updateScript
+
 };
-me
 
-http.createServer((req, res) => {
-    var postdata = "";
-    var query = querystring.parse(url.parse(req.url).query);
+var sockjs = require('sockjs');
+var completionServer = sockjs.createServer();
 
-    res.writeHead(200,  {'Content-Type': 'application/json'});
+completionServer.on('connection', (ws) => {
+    log("client connected");
+    ws.on('data', (data) => {
+        var json = JSON.parse(data);
 
-    try {
-        var response = '';
-        if (req.method === 'POST') {
-            req.addListener('data', (chunk) => {
-                postdata += chunk;
-            });
-
-            req.addListener('end', (chunk) => {
-                methodHandler[query['method']](query, postdata);
-            });
-        } else if (req.method === 'GET') {
-            if (query['method']) {
-                if (methodHandler[query['method']]) {
-                    response = methodHandler[query['method']](query);
-                }
+        if (json['method'] && methodHandler[json['method']]) {
+            var response = "";
+            try {
+                response = methodHandler[json['method']](json);
+            } catch (e) {
+                console.log(e);
+            }
+            if (json['method'] && json['method'] === 'completion') {
+                 ws.write(JSON.stringify(response));
             }
         }
-        res.end(JSON.stringify(response));
-    } catch (e) {
-        console.log(e.toString());
-        res.writeHead(403, {'Content-Type': 'application/json'});
-        res.end('');
-    }
+    });
+});
 
-}).listen(port, '127.0.0.1');
+var server = http.createServer();
+completionServer.installHandlers(server, {});
+server.listen(port, "localhost");

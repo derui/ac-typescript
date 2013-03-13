@@ -48,6 +48,7 @@ module TypeScript {
         public minWhitespace: bool;
         public propagateConstants: bool;
         public emitComments: bool;
+        public emitFullSourceMapPath: bool;
         public outputOption: string;
         public ioHost: EmitterIOHost = null;
         public outputMany: bool = true;
@@ -58,6 +59,7 @@ module TypeScript {
             this.propagateConstants = settings.propagateConstants;
             this.emitComments = settings.emitComments;
             this.outputOption = settings.outputOption;
+            this.emitFullSourceMapPath = settings.emitFullSourceMapPath;
         }
 
         public mapOutputFileName(fileName: string, extensionChanger: (fname: string, wholeFileNameReplaced: bool) => string) {
@@ -103,7 +105,8 @@ module TypeScript {
     }
 
     export class Emitter {
-        public prologueEmitted = false;
+        public globalThisCapturePrologueEmitted = false;
+        public extendsPrologueEmitted = false;
         public thisClassNode: TypeDeclaration = null;
         public thisFnc: FuncDecl = null;
         public moduleDeclList: ModuleDeclaration[] = [];
@@ -297,6 +300,31 @@ module TypeScript {
             }
         }
 
+        private getConstantValue(init: AST): number {
+            if (init) {
+                if (init.nodeType === NodeType.NumberLit) {
+                    var numLit = <NumberLiteral>init;
+                    return numLit.value;
+                }
+                else if (init.nodeType === NodeType.Lsh) {
+                    var binop = <BinaryExpression>init;
+                    if (binop.operand1.nodeType === NodeType.NumberLit &&
+                        binop.operand2.nodeType === NodeType.NumberLit) {
+                        return (<NumberLiteral>binop.operand1).value << (<NumberLiteral>binop.operand2).value;
+                    }
+                }
+                else if (init.nodeType === NodeType.Name) {
+                    var ident = <Identifier>init;
+                    if (ident.sym !== null && ident.sym.declAST.nodeType === NodeType.VarDecl) {
+                        var varDecl = <VarDecl>ident.sym.declAST;
+                        return this.getConstantValue(varDecl.init);
+                    }
+                }
+            }
+
+            return null;
+        }
+
         public tryEmitConstant(dotExpr: BinaryExpression) {
             if (!this.emitOptions.propagateConstants) {
                 return false;
@@ -306,9 +334,9 @@ module TypeScript {
                 if (hasFlag(propertyName.sym.flags, SymbolFlags.Constant)) {
                     if (propertyName.sym.declAST) {
                         var boundDecl = <BoundDecl>propertyName.sym.declAST;
-                        if (boundDecl.init && (boundDecl.init.nodeType == NodeType.NumberLit)) {
-                            var numLit = <NumberLiteral>boundDecl.init;
-                            this.writeToOutput(numLit.value.toString());
+                        var value = this.getConstantValue(boundDecl.init);
+                        if (value !== null) {
+                            this.writeToOutput(value.toString());
                             var comment = " /* ";
                             comment += propertyName.actualText;
                             comment += " */ ";
@@ -318,6 +346,7 @@ module TypeScript {
                     }
                 }
             }
+
             return false;
         }
 
@@ -609,7 +638,7 @@ module TypeScript {
             if (!isMember &&
                 //funcDecl.name != null &&
                 !hasFlag(funcDecl.fncFlags, FncFlags.IsFunctionExpression) &&
-                (hasFlag(funcDecl.fncFlags, FncFlags.Definition) || funcDecl.isConstructor)) {
+                (!hasFlag(funcDecl.fncFlags, FncFlags.Signature) || funcDecl.isConstructor)) {
                 this.writeLineToOutput("");
             } else if (hasFlag(funcDecl.fncFlags, FncFlags.IsFunctionExpression)) {
                 if (hasFlag(funcDecl.flags, ASTFlags.ExplicitSemicolon) || hasFlag(funcDecl.flags, ASTFlags.AutomaticSemicolon)) {
@@ -666,7 +695,7 @@ module TypeScript {
                             if (prevSourceMapper != null) {
                                 this.allSourceMappers = [];
                                 var sourceMappingFile = this.createFile(this.emittingFileName + SourceMapper.MapFileExtension, false);
-                                this.setSourceMappings(new TypeScript.SourceMapper(tsModFileName, this.emittingFileName, this.outfile, sourceMappingFile, this.errorReporter));
+                                this.setSourceMappings(new TypeScript.SourceMapper(tsModFileName, this.emittingFileName, this.outfile, sourceMappingFile, this.errorReporter, this.emitOptions.emitFullSourceMapPath));
                                 this.emitState.column = 0;
                                 this.emitState.line = 0;
                             }
@@ -895,7 +924,7 @@ module TypeScript {
             this.setContainer(temp);
             this.thisFnc = tempFnc;
 
-            if (hasFlag(funcDecl.fncFlags, FncFlags.Definition)) {
+            if (!hasFlag(funcDecl.fncFlags, FncFlags.Signature)) {
                 if (hasFlag(funcDecl.fncFlags, FncFlags.Static)) {
                     if (this.thisClassNode) {
                         if (funcDecl.isAccessor()) {
@@ -1130,9 +1159,13 @@ module TypeScript {
                     }
                     else {
                         var modPath = name.actualText;//(<ModuleDecl>moduleDecl.mod.symbol.declAST).name.actualText;
+                        var isSingleQuotedMod = isSingleQuoted(modPath);
                         var isAmbient = moduleDecl.mod.symbol.declAST && hasFlag((<ModuleDeclaration>moduleDecl.mod.symbol.declAST).modFlags, ModuleFlags.Ambient);
                         modPath = isAmbient ? modPath : this.firstModAlias ? this.firstModAlias : quoteBaseName(modPath);
                         modPath = isAmbient ? modPath : (!isRelative(stripQuotes(modPath)) ? quoteStr("./" + stripQuotes(modPath)) : modPath);
+                        if (isSingleQuotedMod) {
+                            modPath = changeToSingleQuote(modPath);
+                        }
                         this.writeToOutput("require(" + modPath + ")");
                     }
                 }
@@ -1206,7 +1239,7 @@ module TypeScript {
                 if (!name) {
                     finalName = "";
                 } else if (this.sourceMapper.currentNameIndex.length > 0) {
-                    finalName = this.sourceMapper.names[this.sourceMapper.currentNameIndex.length - 1] + "." + name;
+                    finalName = this.sourceMapper.names[this.sourceMapper.currentNameIndex[this.sourceMapper.currentNameIndex.length - 1]] + "." + name;
                 }
 
                 // We are currently not looking for duplicate but that is possible.
@@ -1280,11 +1313,12 @@ module TypeScript {
             }
             else {
                 var list = <ASTList>ast;
+                this.emitParensAndCommentsInPlace(ast, true);
                 if (list.members.length == 0) {
+                    this.emitParensAndCommentsInPlace(ast, false);
                     return;
                 }
 
-                this.emitParensAndCommentsInPlace(ast, true);
                 var len = list.members.length;
                 for (var i = 0; i < len; i++) {
                     if (emitPrologue) {
@@ -1678,17 +1712,20 @@ module TypeScript {
         }
 
         public emitPrologue(reqInherits: bool) {
-            if (!this.prologueEmitted) {
+            if (!this.extendsPrologueEmitted) {
                 if (reqInherits) {
-                    this.prologueEmitted = true;
+                    this.extendsPrologueEmitted = true;
                     this.writeLineToOutput("var __extends = this.__extends || function (d, b) {");
                     this.writeLineToOutput("    function __() { this.constructor = d; }");
                     this.writeLineToOutput("    __.prototype = b.prototype;");
                     this.writeLineToOutput("    d.prototype = new __();");
                     this.writeLineToOutput("};");
                 }
+            }
+
+            if (!this.globalThisCapturePrologueEmitted) {
                 if (this.checker.mustCaptureGlobalThis) {
-                    this.prologueEmitted = true;
+                    this.globalThisCapturePrologueEmitted = true;
                     this.writeLineToOutput(this.captureThisStmtString);
                 }
             }

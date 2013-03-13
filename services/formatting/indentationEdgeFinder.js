@@ -62,6 +62,16 @@ var Formatting;
                         }
                     }
                     break;
+                case Formatting.AuthorParseNodeKind.apnkTryCatch:
+                case Formatting.AuthorParseNodeKind.apnkTryFinally:
+ {
+                        Formatting.ParseNodeExtensions.ForAllChildren(node, function (child) {
+                            IndentationEdgeFinder.FillIndentationLevels(child);
+                        });
+                        node.IndentationDelta = null;
+                        node.ChildrenIndentationDelta = null;
+                    }
+                    break;
                 case Formatting.AuthorParseNodeKind.apnkFncDecl:
  {
                         IndentationEdgeFinder.FillBodyIndentation(node, nextNodesToVisit);
@@ -167,7 +177,7 @@ var Formatting;
                         if(body == null || (body != null && body.AuthorNode.Details.Kind != Formatting.AuthorParseNodeKind.apnkTryCatch && body.AuthorNode.Details.Kind != Formatting.AuthorParseNodeKind.apnkTryFinally)) {
                             var parent = node.Parent;
                             while(parent != null) {
-                                if(parent.AuthorNode.Details.Kind == Formatting.AuthorParseNodeKind.apnkBlock) {
+                                if((parent.AuthorNode.Details.Kind == Formatting.AuthorParseNodeKind.apnkTryCatch || parent.AuthorNode.Details.Kind == Formatting.AuthorParseNodeKind.apnkTryFinally) && parent.IndentationDelta != null) {
                                     node.IndentationDelta = parent.IndentationDelta;
                                     break;
                                 }

@@ -469,8 +469,8 @@ var Services;
             }
             return this.compiler.units[unitIndex].lineMap;
         };
-        CompilerState.prototype.getScopeEntries = function (enclosingScopeContext) {
-            return new TypeScript.ScopeTraversal(this.compiler).getScopeEntries(enclosingScopeContext);
+        CompilerState.prototype.getScopeEntries = function (enclosingScopeContext, getPrettyTypeName) {
+            return new TypeScript.ScopeTraversal(this.compiler).getScopeEntries(enclosingScopeContext, getPrettyTypeName);
         };
         CompilerState.prototype.getErrorEntries = function (maxCount, filter) {
             var entries = [];

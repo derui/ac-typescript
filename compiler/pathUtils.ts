@@ -23,8 +23,12 @@ module TypeScript {
         return str.replace("\"", "").replace("'", "").replace("'", "").replace("\"", "")
     }
 
+    export function isSingleQuoted(str: string) {
+        return str.indexOf("'") != -1;
+    }
+
     export function isQuoted(str: string) {
-        return str.indexOf("\"") != -1 || str.indexOf("'") != -1 || str.indexOf("'") != -1 || str.indexOf("\"") != -1;
+        return str.indexOf("\"") != -1 || isSingleQuoted(str);
     }
 
     export function quoteStr(str: string) {
@@ -42,6 +46,14 @@ module TypeScript {
             str = str.replace("'", "\"");
         }
 
+        return str;
+    }
+
+    export function changeToSingleQuote(str: string) {
+        if (str.indexOf("\"") != -1) {
+            str = str.replace("\"", "'");
+            str = str.replace("\"", "'");
+        }
         return str;
     }
 
