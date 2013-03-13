@@ -77,16 +77,22 @@ var opts = new Options().parse([
     new OptionItem("port", "p"), 
     new OptionItem("debug", "d", false, false)
 ]);
+var debugging = opts["debug"] || false;
 var port = parseInt(opts['port']) || 8124;
 var services = require('./typeScriptCompletion')
 var typescriptLS = new services.TypeScriptLS();
 typescriptLS.addDefaultLibrary();
 var http = require('http');
 var lsCache = null;
+function log(mes) {
+    if(debugging) {
+        console.log(mes);
+    }
+}
 function addFile(query) {
     if(query['file']) {
         typescriptLS.addFile(query['file'], true);
-        console.log('add file : ' + query['file']);
+        log('add file : ' + query['file']);
         lsCache = typescriptLS.getLanguageService();
     }
     return '';
@@ -104,13 +110,13 @@ function completion(query) {
     }
     var isMember = false;
     if(query['member']) {
-        console.log("member is " + query['member']);
+        log("member is " + query['member']);
         isMember = query['member'] === 1 ? true : false;
     }
     var base = query['file'];
     var line = parseInt(query['line']);
     var column = parseInt(query['column']);
-    console.log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column + 'member : ' + isMember);
+    log('completion start : file [' + query['file'] + "] line : " + line + " column : " + column + 'member : ' + isMember);
     if(lsCache == null) {
         lsCache = typescriptLS.getLanguageService();
     }
@@ -119,13 +125,13 @@ function completion(query) {
 }
 function updateFile(query) {
     var content = decodeURIComponent(query['content']);
-    console.log('update file : file [' + query['file'] + '] : length -> ' + content.length);
+    log('update file : file [' + query['file'] + '] : length -> ' + content.length);
     typescriptLS.updateScript(query['file'], content, true);
     lsCache = typescriptLS.getLanguageService();
     return '';
 }
 function updateScript(query) {
-    console.log('update range in file : ' + query['file'] + " : " + query['prev'] + ' : ' + query['next'] + ' => ' + query['text']);
+    log('update range in file : ' + query['file'] + " : " + query['prev'] + ' : ' + query['next'] + ' => ' + query['text']);
     typescriptLS.editScript(query['file'], parseInt(query['prev']), parseInt(query['next']), decodeURIComponent(query['text']));
     lsCache = typescriptLS.getLanguageService();
     return '';
@@ -139,7 +145,7 @@ var methodHandler = {
 var sockjs = require('sockjs');
 var completionServer = sockjs.createServer();
 completionServer.on('connection', function (ws) {
-    console.log("client connected");
+    log("client connected");
     ws.on('data', function (data) {
         var json = JSON.parse(data);
         if(json['method'] && methodHandler[json['method']]) {

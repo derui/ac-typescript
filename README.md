@@ -11,6 +11,9 @@ You have to install Node and be able to use npm before, but not have to install 
 because ac-typescript is already included them.
 Therefore, we recommend to install TypeScript.el that is major mode to edit Typescript.
 
+Note: ac-typescript can run on Windows, but performance on Windows is less than on Linux.(Sorry, We do not test for MacOSX)
+So you will happy to use this on Windows rather than VisualStudio with TypeScript Plugin...
+
 Setup and Usage
 ===============
 
