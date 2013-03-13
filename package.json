@@ -1,0 +1,11 @@
+{
+    "name": "isense",
+    "author": {
+        "name": "derui"
+    },
+    "version": "0.1.0",
+    "description" : "Websocket server for providing completion for TypeScript",
+    "dependencies": {
+        "sockjs": "0.3.5"
+    }
+}

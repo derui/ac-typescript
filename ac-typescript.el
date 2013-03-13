@@ -181,12 +181,8 @@
   (setq ac-sources (append '(ac-source-typescript) ac-sources))
   (auto-complete-mode 1)
 
-  ;; install current buffer registration to save-buffer-hook
-  ;; (if ac-typescript/auto-register
-  ;;     (setq ac-typescript/timer-handle
-  ;;           (run-with-idle-timer ac-typescript/auto-register-interval t
-  ;;                                'ac-typescript/auto-update-each-buffer)))
   (add-hook 'after-save-hook 'ac-typescript/register)
+  (make-variable-buffer-local 'after-change-functions)
   (add-hook 'after-change-functions 'ac-typescript/update-range)
 
   (when (and ac-typescript/auto-register
